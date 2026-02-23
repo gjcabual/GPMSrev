@@ -1,8 +1,34 @@
 from app.utils.image_ocr_utils import process_image, compare_images
-from app.utils.text_ocr_utils import validate_credentials, compare_text_array
+from app.utils.text_ocr_utils import validate_credentials, compare_text_array, extract_document_reference
 from app.utils.common_utils import get_text_from_file
 from app.utils.date_ocr_utils import extract_dates
 from datetime import datetime
+
+def extract_document_data(uploaded_image_path, doc_type):
+    """
+    Run OCR on the uploaded image only (no reference) and return file_number and dates.
+    Use when reference files are missing or for extract-only flow.
+    Returns dict with keys: file_number (OR/CR), dates (expiration_date, etc.) - same shape as compare_credentials result.
+    """
+    result = {
+        "file_number": None,
+        "dates": {"expiration_date": None, "birth_date": None, "other_dates": []},
+    }
+    try:
+        text_or_path, _ = process_image(uploaded_image_path, save_results=False)
+        uploaded_text = (text_or_path or "") if text_or_path is not None else ""
+        if not uploaded_text or not uploaded_text.strip():
+            return result
+        if doc_type in ("OR", "CR"):
+            ref_result = extract_document_reference(uploaded_text, doc_type)
+            if ref_result.get("is_valid"):
+                result["file_number"] = ref_result.get("file_number")
+        dates = extract_dates(uploaded_text, doc_type)
+        result["dates"] = dates
+    except Exception as e:
+        print(f"extract_document_data failed: {e}")
+    return result
+
 
 def document_type(doc_type):
     """
@@ -110,7 +136,6 @@ def compare_credentials(reference_image_path, uploaded_image_path, text_array, s
 
         # Extract file number first for OR and CR
         if doc_type in ["OR", "CR"]:
-            from app.utils.text_ocr_utils import extract_document_reference
             ref_result = extract_document_reference(uploaded_text, doc_type)
             
             if ref_result["is_valid"]:
@@ -140,14 +165,23 @@ def compare_credentials(reference_image_path, uploaded_image_path, text_array, s
             print(f"Accuracy: {percentage:.1f}%")
             print(f"Passes threshold: {'Yes' if is_image_valid else 'No'}")
 
-        # Text comparison
-        is_text_valid, text_similarity = compare_text_array(
-            text_array, 
-            uploaded_text, 
-            threshold=0.85,
-            doc_type=doc_type,
-            show_results=show_results
-        )
+        # For OR/CR: validate only by extracted file number (OR file no. / MV file no.), not plate (plate may be temporary)
+        if doc_type in ["OR", "CR"]:
+            is_text_valid = bool(result.get("file_number"))
+            text_similarity = 1.0 if is_text_valid else 0.0
+            if show_results:
+                print(f"\n=[ OR/CR File Number Validation ]=")
+                print(f"Type: {doc_type} – validated by file number only (plate not matched)")
+                print(f"Valid: {'Yes' if is_text_valid else 'No'}")
+        else:
+            # DL: match applicant details (name, birth date) from step 1
+            is_text_valid, text_similarity = compare_text_array(
+                text_array, 
+                uploaded_text, 
+                threshold=0.85,
+                doc_type=doc_type,
+                show_results=show_results
+            )
 
         # Date extraction and validation
         dates = extract_dates(uploaded_text, doc_type)

@@ -13,11 +13,12 @@ const steps = [
  "Confirm Email Address",
  "Vehicle Information",
  "Documents",
+ "Confirm document details",
 ];
 
 export const Application = () => {
  const nav = useNavigate();
- const [selected, setSelected] = useState(null);
+ const [selected, setSelected] = useState("Employee Parking");
  const [currentStep, setCurrentStep] = useState(0);
  const [isVerifying, setIsVerifying] = useState(false);
  const [status, setStatus] = useState(null);
@@ -43,6 +44,19 @@ export const Application = () => {
   dl: null,
   updateValidationErrors: null,
  });
+ const [extractedDocDetails, setExtractedDocDetails] = useState({
+  OR: { file_number: "", expiration_date: "" },
+  CR: { file_number: "" },
+  DL: { expiration_date: "" },
+ });
+ const [confirmedDocDetails, setConfirmedDocDetails] = useState({
+  or_file_number: "",
+  cr_file_number: "",
+  or_expiration: "",
+  dl_expiration: "",
+ });
+ const [detailsConfirmed, setDetailsConfirmed] = useState(false);
+ const [isExtracting, setIsExtracting] = useState(false);
  const [vehicleFormData, setVehicleFormData] = useState({
   plate_no: "",
   model: "",
@@ -55,8 +69,8 @@ export const Application = () => {
 
  const choice = ["Employee Parking", "Student", "Drop Off", "Concessionaire"];
 
- // states
- const [type, setType] = useState(true);
+ // Show application steps first (home); role selection hidden unless user clicks Back from step 0
+ const [type, setType] = useState(false);
 
  // Update vehicleData when vehicleFormData changes
  useEffect(() => {
@@ -113,6 +127,16 @@ export const Application = () => {
       setDocumentFiles={setDocumentFilesRef}
       documentFiles={documentFilesRef}
       setHasApiError={setHasApiError}
+     />
+    );
+   case 4:
+    return (
+     <Step5ConfirmDetails
+      extractedDocDetails={extractedDocDetails}
+      confirmedDocDetails={confirmedDocDetails}
+      setConfirmedDocDetails={setConfirmedDocDetails}
+      detailsConfirmed={detailsConfirmed}
+      setDetailsConfirmed={setDetailsConfirmed}
      />
     );
    default:
@@ -190,6 +214,14 @@ export const Application = () => {
    formData.append("doc_exp_dates", expDateString);
    formData.append("doc_types", "OR,CR,DL");
 
+   if (confirmedDocDetails.or_file_number && confirmedDocDetails.cr_file_number &&
+       confirmedDocDetails.or_expiration && confirmedDocDetails.dl_expiration) {
+    formData.append("confirmed_or_file_number", confirmedDocDetails.or_file_number);
+    formData.append("confirmed_cr_file_number", confirmedDocDetails.cr_file_number);
+    formData.append("confirmed_or_expiration", confirmedDocDetails.or_expiration);
+    formData.append("confirmed_dl_expiration", confirmedDocDetails.dl_expiration);
+   }
+
    // Add document files
    if (documentFilesRef.or) formData.append("doc_files", documentFilesRef.or);
    if (documentFilesRef.cr) formData.append("doc_files", documentFilesRef.cr);
@@ -211,9 +243,14 @@ export const Application = () => {
 
     // Check for document match validation
     if (applicationData.detail?.document_match === false) {
-     toast.error(
-      "The file numbers on your OR and CR documents don't match. Please upload matching documents."
-     );
+     const hint = applicationData.detail?.match_hint;
+     const orNum = applicationData.detail?.or_file_number;
+     const crNum = applicationData.detail?.cr_file_number;
+     let msg = hint || "The file numbers on your OR and CR documents don't match.";
+     if (orNum != null || crNum != null) {
+      msg += ` Extracted: OR=${orNum ?? "—"}, CR=${crNum ?? "—"}`;
+     }
+     toast.error(msg, { duration: 6000 });
 
      // Still update validation errors for display
      if (validationErrors && documentFilesRef.updateValidationErrors) {
@@ -487,8 +524,61 @@ export const Application = () => {
    } finally {
     setIsRequestingOTP(false);
    }
+  } else if (currentStep === 3) {
+   // Documents step: call extract API then go to confirm step
+   if (!documentFilesRef.or || !documentFilesRef.cr || !documentFilesRef.dl) {
+    toast.error("Please upload all required documents (OR, CR, DL) before proceeding.");
+    return;
+   }
+   try {
+    setIsExtracting(true);
+    setHasApiError(false);
+    const formData = new FormData();
+    formData.append("doc_types", "OR,CR,DL");
+    formData.append("doc_files", documentFilesRef.or);
+    formData.append("doc_files", documentFilesRef.cr);
+    formData.append("doc_files", documentFilesRef.dl);
+    if (vehicleData?.plate_no) formData.append("plate_no", vehicleData.plate_no);
+
+    const res = await fetch(buildUrl("/applicant/application/extract"), {
+     method: "POST",
+     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+     body: formData,
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+     setHasApiError(true);
+     toast.error(data.detail || "Failed to extract document details.");
+     return;
+    }
+
+    const orFile = data?.OR?.file_number ?? "";
+    const orExp = data?.OR?.expiration_date ?? "";
+    const crFile = data?.CR?.file_number ?? "";
+    const dlExp = data?.DL?.expiration_date ?? "";
+
+    setExtractedDocDetails({
+     OR: { file_number: orFile, expiration_date: orExp },
+     CR: { file_number: crFile },
+     DL: { expiration_date: dlExp },
+    });
+    setConfirmedDocDetails({
+     or_file_number: orFile,
+     cr_file_number: crFile,
+     or_expiration: orExp,
+     dl_expiration: dlExp,
+    });
+    setDetailsConfirmed(false);
+    setCurrentStep(4);
+   } catch (err) {
+    console.error(err);
+    toast.error("Failed to extract document details. Please try again.");
+    setHasApiError(true);
+   } finally {
+    setIsExtracting(false);
+   }
   } else {
-   // For other steps, just move to the next step
    setCurrentStep((prev) => prev + 1);
   }
  };
@@ -561,7 +651,7 @@ export const Application = () => {
        <button
         className="bg-primary h-10 px-4 rounded-md text-white font-medium disabled:bg-gray-300 flex items-center gap-2 cursor-pointer"
         onClick={handleSubmit}
-        disabled={isSubmitting} // Only disable while submitting
+        disabled={isSubmitting || (currentStep === 4 && !detailsConfirmed)}
        >
         {isSubmitting ? (
          <>
@@ -578,13 +668,12 @@ export const Application = () => {
         <button
          className="bg-primary h-10 px-4 rounded-md text-white font-medium disabled:bg-gray-300 flex items-center gap-2 cursor-pointer"
          onClick={handleNextStep}
-         // Only disable if requesting OTP and there are no errors
-         disabled={isRequestingOTP && !hasApiError}
+         disabled={(isRequestingOTP || isExtracting) && !hasApiError}
         >
-         {isRequestingOTP ? (
+         {isRequestingOTP || isExtracting ? (
           <>
            <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-           Sending...
+           {isExtracting ? "Extracting..." : "Sending..."}
           </>
          ) : (
           "Next"
@@ -2138,6 +2227,133 @@ const Step4 = ({ setDocumentFiles, documentFiles, setHasApiError }) => {
     </div>
    </div>
   </>
+ );
+};
+
+const Step5ConfirmDetails = ({
+ extractedDocDetails,
+ confirmedDocDetails,
+ setConfirmedDocDetails,
+ detailsConfirmed,
+ setDetailsConfirmed,
+}) => {
+ const fromOcr = (key) => {
+  const v = key === "or_file_number" ? extractedDocDetails?.OR?.file_number
+    : key === "cr_file_number" ? extractedDocDetails?.CR?.file_number
+    : key === "or_expiration" ? extractedDocDetails?.OR?.expiration_date
+    : key === "dl_expiration" ? extractedDocDetails?.DL?.expiration_date
+    : "";
+  return v != null && String(v).trim() !== "";
+ };
+
+ return (
+  <div className="w-full md:w-[900px] h-auto shadow border border-gray-400 rounded-lg">
+   <div className="h-8 bg-primary rounded-t-lg" />
+   <div className="p-8 flex flex-col gap-6">
+    <h1 className="text-primary text-2xl font-bold text-center">
+     Confirm document details
+    </h1>
+    <p className="text-sm text-gray-600 text-center">
+     The fields below are filled from your uploaded documents. Only edit or add
+     information that is missing or incorrect, then confirm and submit.
+    </p>
+
+    <div className="space-y-4">
+     <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+       OR file number
+      </label>
+      <input
+       type="text"
+       value={confirmedDocDetails.or_file_number ?? ""}
+       onChange={(e) =>
+        setConfirmedDocDetails((prev) => ({
+         ...prev,
+         or_file_number: e.target.value,
+        }))
+       }
+       className="w-full px-3 py-2 border border-gray-300 rounded-md"
+       placeholder={fromOcr("or_file_number") ? "" : "Not extracted – please enter (e.g. 150100000342937)"}
+      />
+      {fromOcr("or_file_number") && (
+       <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+      )}
+     </div>
+     <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+       CR file number (should match OR)
+      </label>
+      <input
+       type="text"
+       value={confirmedDocDetails.cr_file_number ?? ""}
+       onChange={(e) =>
+        setConfirmedDocDetails((prev) => ({
+         ...prev,
+         cr_file_number: e.target.value,
+        }))
+       }
+       className="w-full px-3 py-2 border border-gray-300 rounded-md"
+       placeholder={fromOcr("cr_file_number") ? "" : "Not extracted – please enter (e.g. 1501-00000342937)"}
+      />
+      {fromOcr("cr_file_number") && (
+       <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+      )}
+     </div>
+     <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+       OR expiration (MM/YYYY)
+      </label>
+      <input
+       type="text"
+       value={confirmedDocDetails.or_expiration ?? ""}
+       onChange={(e) =>
+        setConfirmedDocDetails((prev) => ({
+         ...prev,
+         or_expiration: e.target.value,
+        }))
+       }
+       className="w-full px-3 py-2 border border-gray-300 rounded-md"
+       placeholder={fromOcr("or_expiration") ? "" : "Not extracted – please enter (e.g. 07/2026)"}
+      />
+      {fromOcr("or_expiration") && (
+       <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+      )}
+     </div>
+     <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+       DL expiration (YYYY/MM/DD)
+      </label>
+      <input
+       type="text"
+       value={confirmedDocDetails.dl_expiration ?? ""}
+       onChange={(e) =>
+        setConfirmedDocDetails((prev) => ({
+         ...prev,
+         dl_expiration: e.target.value,
+        }))
+       }
+       className="w-full px-3 py-2 border border-gray-300 rounded-md"
+       placeholder={fromOcr("dl_expiration") ? "" : "Not extracted – please enter (e.g. 2033/11/06)"}
+      />
+      {fromOcr("dl_expiration") && (
+       <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+      )}
+     </div>
+    </div>
+
+    <label className="flex items-center gap-2 cursor-pointer">
+     <input
+      type="checkbox"
+      checked={detailsConfirmed}
+      onChange={(e) => setDetailsConfirmed(e.target.checked)}
+      className="w-4 h-4 rounded border-gray-300"
+     />
+     <span className="text-sm font-medium text-gray-700">
+      I have confirmed the above details are correct.
+     </span>
+    </label>
+   </div>
+  </div>
  );
 };
 

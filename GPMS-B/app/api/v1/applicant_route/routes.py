@@ -25,7 +25,7 @@ from fastapi import Request
 import sys
 import os
 from app.core.ocr_doc_validator import validate_document
-from app.utils.document_ocr_utils import document_type
+from app.utils.document_ocr_utils import document_type, extract_document_data
 from app.schemas.profile import ProfileUpdate, SuccessResponse
 from app.utils.email import send_verification_email
 from app.db.repositories.token import create_verification_token, get_valid_verification_token, delete_used_token
@@ -49,6 +49,119 @@ router = APIRouter(
     tags=["Applicant"]
 )
 
+
+def _normalize_file_number(s: Optional[str]) -> str:
+    """Normalize file number: remove spaces and hyphens."""
+    if not s or not isinstance(s, str):
+        return (s or "").strip()
+    return s.replace(" ", "").replace("-", "").replace("—", "").replace("–", "").strip()
+
+
+@router.post("/application/extract")
+async def extract_document_details(
+    doc_types: str = Form(...),
+    doc_files: List[UploadFile] = File(...),
+    plate_no: str = Form(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """
+    Extract OCR data from documents without validation blocking.
+    Returns file numbers and expiration dates for OR, CR, DL.
+    Does not raise 422; returns whatever was extracted (null if OCR failed).
+    """
+    profile_query = select(Profile).where(Profile.user_id == current_user.user_id)
+    profile_result = await db.execute(profile_query)
+    user_profile = profile_result.scalar_one_or_none()
+    if not user_profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
+
+    doc_types_list = [dt.strip().upper() for dt in doc_types.split(",")]
+    valid_types = {"OR", "CR", "DL"}
+    if not all(dt in valid_types for dt in doc_types_list):
+        raise HTTPException(status_code=400, detail="Invalid document type(s)")
+    if set(doc_types_list) != {"OR", "CR", "DL"}:
+        raise HTTPException(status_code=400, detail="Must provide OR, CR, DL")
+
+    validation_results = []
+    try:
+        for doc_type, doc_file in zip(doc_types_list, doc_files):
+            temp_path = f"temp_extract_{doc_type}_{doc_file.filename}"
+            content = await doc_file.read()
+            await doc_file.seek(0)
+            with open(temp_path, "wb") as buffer:
+                buffer.write(content)
+
+            reference_path = document_type(doc_type)
+            result = None
+            # OR/CR: validated by file number only (OR file no. / MV file no.); plate not matched (may be temporary).
+            # DL: validate against applicant details from step 1 (name, birth date from profile).
+            if reference_path:
+                try:
+                    validation_array = []
+                    if doc_type == "DL":
+                        # DL must match applicant details from step 1 (profile)
+                        validation_array = [
+                            user_profile.first_name,
+                            user_profile.last_name,
+                            user_profile.birth_date.strftime("%Y/%m/%d") if user_profile.birth_date else ""
+                        ]
+                    elif doc_type in ("OR", "CR"):
+                        # OR/CR: match file number only (no plate)
+                        validation_array = []
+                    result = validate_document(
+                        reference_path, temp_path, validation_array,
+                        doc_type=doc_type, show_results=False, save_results=False
+                    )
+                except Exception as e:
+                    logger.warning("validate_document failed for %s, falling back to OCR-only: %s", doc_type, e)
+                    result = None
+            if result is None:
+                result = extract_document_data(temp_path, doc_type)
+            validation_results.append({"type": doc_type, "result": result, "temp_path": temp_path})
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+        response = {"OR": {"file_number": None, "expiration_date": None}, "CR": {"file_number": None}, "DL": {"expiration_date": None}}
+        for v in validation_results:
+            r = v["result"]
+            dt = v["type"]
+            if dt == "OR":
+                response["OR"]["file_number"] = r.get("file_number")
+                exp = r.get("dates", {}).get("expiration_date")
+                if exp:
+                    try:
+                        s = str(exp)
+                        if "/" in s and len(s.split("/")) >= 2:
+                            parts = s.split("/")
+                            if len(parts) == 3:
+                                d = datetime.strptime(s, "%Y/%m/%d")
+                                response["OR"]["expiration_date"] = d.strftime("%m/%Y")
+                            else:
+                                response["OR"]["expiration_date"] = s
+                        else:
+                            response["OR"]["expiration_date"] = s
+                    except Exception:
+                        response["OR"]["expiration_date"] = str(exp)
+            elif dt == "CR":
+                response["CR"]["file_number"] = r.get("file_number")
+            elif dt == "DL":
+                exp = r.get("dates", {}).get("expiration_date")
+                response["DL"]["expiration_date"] = exp
+        return response
+    except Exception as e:
+        for v in validation_results:
+            tp = v.get("temp_path") if isinstance(v, dict) else None
+            if tp and os.path.exists(tp):
+                try:
+                    os.remove(tp)
+                except Exception:
+                    pass
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/application")
 async def create_application(
     request: Request,
@@ -58,8 +171,11 @@ async def create_application(
     plate_no: str = Form(...),
     doc_types: str = Form(...),  # "OR,CR,DL"
     doc_files: List[UploadFile] = File(...),
-    # Remove doc_reg_dates and doc_exp_dates parameters
     driver_ids: str = Form(None),
+    confirmed_or_file_number: str = Form(None),
+    confirmed_cr_file_number: str = Form(None),
+    confirmed_or_expiration: str = Form(None),
+    confirmed_dl_expiration: str = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: UserInDB = Depends(get_current_applicant)
 ):
@@ -107,19 +223,30 @@ async def create_application(
                 detail=f"Missing required document(s): {', '.join(missing_docs)}"
             )
 
-        # Validate each document
+        use_confirmed = all([
+            confirmed_or_file_number and confirmed_or_file_number.strip(),
+            confirmed_cr_file_number and confirmed_cr_file_number.strip(),
+            confirmed_or_expiration and confirmed_or_expiration.strip(),
+            confirmed_dl_expiration and confirmed_dl_expiration.strip(),
+        ])
+
         validation_results = []
         for doc_type, doc_file in zip(doc_types_list, doc_files):
-            # Create a new temp path for each file
-            temp_path = f"temp_{doc_type}_{doc_file.filename}"
-            
-            # Create temporary file for validation
-            with open(temp_path, "wb") as buffer:
-                content = await doc_file.read()
-                buffer.write(content)
-                await doc_file.seek(0)
+            content = await doc_file.read()
+            await doc_file.seek(0)
 
-                # Get reference path for document type
+            if use_confirmed:
+                validation_results.append({
+                    "type": doc_type,
+                    "result": {"dates": {"expiration_date": None}},
+                    "content": content,
+                    "temp_path": None
+                })
+            else:
+                temp_path = f"temp_{doc_type}_{doc_file.filename}"
+                with open(temp_path, "wb") as buffer:
+                    buffer.write(content)
+
                 reference_path = document_type(doc_type)
                 if not reference_path:
                     raise HTTPException(
@@ -127,90 +254,63 @@ async def create_application(
                         detail=f"Reference document not found for type: {doc_type}"
                     )
 
-                # Create document-specific validation array
-                print("\n\n+==================================================+")
+                # OR/CR: validate by file number only (no plate). DL: validate against applicant details (step 1 profile).
                 validation_array = []
-                if (doc_type == "DL"):
+                if doc_type == "DL":
                     validation_array = [
                         user_profile.first_name,
                         user_profile.last_name,
                         user_profile.birth_date.strftime("%Y/%m/%d")
                     ]
-                    print(f"Validation array for DL: {validation_array}")
-                elif (doc_type == "OR"):
-                    validation_array = [
-                        # user_profile.first_name,
-                        # user_profile.last_name,
-                        plate_no,
-                        # vehicle.color
-                    ]
-                    print(f"Validation array for OR: {validation_array}")
-                elif (doc_type == "CR"):
-                    validation_array = [
-                        plate_no,
-                        # vehicle.color,
-                        # vehicle.brand,
-                        # vehicle.vehicle_type,
-                        # user_profile.first_name,
-                        # user_profile.last_name
-                    ]
-                    print(f"Validation array for CR: {validation_array}")
+                elif doc_type in ("OR", "CR"):
+                    validation_array = []  # file number only; plate not matched
 
-                # Validate document with specific fields
                 validation_result = validate_document(
-                    reference_path,
-                    temp_path,
-                    validation_array,
-                    doc_type=doc_type,
-                    show_results=True,
-                    save_results=True
+                    reference_path, temp_path, validation_array,
+                    doc_type=doc_type, show_results=True, save_results=True
                 )
-
-                # Store the validation result and current temp path together
                 validation_results.append({
                     "type": doc_type,
                     "result": validation_result,
                     "content": content,
-                    "temp_path": temp_path  # This ensures we're tracking the correct path
+                    "temp_path": temp_path
                 })
 
-        # Check if all documents are valid
-        all_docs_valid = all(v["result"]["is_valid"] for v in validation_results)
-
-        # Get file numbers and check match
-        or_file_number = None
-        cr_file_number = None
-        document_match = False
-
-        for v in validation_results:
-            if v["type"] == "OR":
-                or_file_number = v["result"].get("file_number")  
-            elif v["type"] == "CR":
-                cr_file_number = v["result"].get("file_number")  
-
-        # Document match is true if:
-        # 1. Both file numbers exist
-        # 2. They match after normalization (removing hyphens)
-        if or_file_number and cr_file_number:
-            document_match = or_file_number == cr_file_number
+        if use_confirmed:
+            document_match = (_normalize_file_number(confirmed_or_file_number) ==
+                             _normalize_file_number(confirmed_cr_file_number))
+            if not document_match:
+                for v in validation_results:
+                    tp = v.get("temp_path")
+                    if tp and os.path.exists(tp):
+                        try:
+                            os.remove(tp)
+                        except Exception:
+                            pass
+                raise HTTPException(
+                    status_code=400,
+                    detail="OR and CR file numbers do not match. Please correct the values."
+                )
         else:
+            all_docs_valid = all(v["result"]["is_valid"] for v in validation_results)
+            or_file_number = None
+            cr_file_number = None
             document_match = False
-
-        # Check both document validity AND matching
-        # if False:
-        if not all_docs_valid or not document_match:
-            # Clean up all temporary files before raising the exception
             for v in validation_results:
-                try:
-                    if os.path.exists(v["temp_path"]):
-                        os.remove(v["temp_path"])
-                except Exception as e:
-                    print(f"Warning: Could not remove temporary file {v['temp_path']}: {e}")
-                    
-            # Now raise the exception
-            raise HTTPException(
-                status_code=422,
-                detail={
+                if v["type"] == "OR":
+                    or_file_number = v["result"].get("file_number")
+                elif v["type"] == "CR":
+                    cr_file_number = v["result"].get("file_number")
+            if or_file_number and cr_file_number:
+                document_match = or_file_number == cr_file_number
+            if not all_docs_valid or not document_match:
+                for v in validation_results:
+                    try:
+                        if os.path.exists(v["temp_path"]):
+                            os.remove(v["temp_path"])
+                    except Exception as e:
+                        print(f"Warning: Could not remove temporary file {v['temp_path']}: {e}")
+                detail = {
                     "message": "Document validation failed",
                     "validation_errors": [
                         {
@@ -221,13 +321,21 @@ async def create_application(
                                 "text": not v["result"]["text_valid"],
                                 "expiration": not v["result"]["date_valid"],
                                 "message": v["result"].get("date_message", ""),
-                                "file_number": v["result"].get("file_number")  # Changed from reference_number
+                                "file_number": v["result"].get("file_number")
                             }
                         } for v in validation_results
                     ],
                     "document_match": document_match
                 }
-            )
+                if or_file_number is not None or cr_file_number is not None:
+                    detail["or_file_number"] = or_file_number
+                    detail["cr_file_number"] = cr_file_number
+                    detail["match_hint"] = (
+                        "OR and CR file numbers match" if document_match
+                        else "OR and CR file numbers do not match" if (or_file_number and cr_file_number)
+                        else "File number not extracted from one or both documents"
+                    )
+                raise HTTPException(status_code=422, detail=detail)
 
         # Convert driver IDs if provided
         driver_id_list = None
@@ -249,25 +357,51 @@ async def create_application(
                 doc_type = validation_data["type"]
                 validation_result = validation_data["result"]
                 content = validation_data["content"]
-                
-                # Extract expiration date from validation result instead of re-validating
-                if doc_type == "OR":
-                    or_expiration = validation_result['dates']['expiration_date']
-                    exp_date = datetime.strptime(or_expiration, "%m/%Y")
-                    # [date processing remains the same]
-                    exp_date = exp_date.replace(day=28) + timedelta(days=4)
-                    exp_date = exp_date - timedelta(days=exp_date.day)
-                elif doc_type == "CR":
-                    # Use OR expiration date for CR
-                    exp_date = datetime.strptime(or_expiration, "%m/%Y")
-                    # [date processing remains the same]
-                    exp_date = exp_date.replace(day=28) + timedelta(days=4)
-                    exp_date = exp_date - timedelta(days=exp_date.day)
-                else:  # DL
-                    exp_date = datetime.strptime(
-                        validation_result['dates']['expiration_date'], 
-                        "%Y/%m/%d"
-                    )
+
+                if use_confirmed:
+                    if doc_type == "OR":
+                        try:
+                            exp_date = datetime.strptime(confirmed_or_expiration.strip(), "%m/%Y")
+                        except ValueError:
+                            raise HTTPException(status_code=400, detail="Invalid OR expiration format. Use MM/YYYY.")
+                        exp_date = exp_date.replace(day=28) + timedelta(days=4)
+                        exp_date = exp_date - timedelta(days=exp_date.day)
+                    elif doc_type == "CR":
+                        try:
+                            exp_date = datetime.strptime(confirmed_or_expiration.strip(), "%m/%Y")
+                        except ValueError:
+                            raise HTTPException(status_code=400, detail="Invalid OR expiration format. Use MM/YYYY.")
+                        exp_date = exp_date.replace(day=28) + timedelta(days=4)
+                        exp_date = exp_date - timedelta(days=exp_date.day)
+                    else:
+                        try:
+                            exp_date = datetime.strptime(confirmed_dl_expiration.strip(), "%Y/%m/%d")
+                        except ValueError:
+                            try:
+                                exp_date = datetime.strptime(confirmed_dl_expiration.strip(), "%Y-%m-%d")
+                            except ValueError:
+                                raise HTTPException(status_code=400, detail="Invalid DL expiration format. Use YYYY/MM/DD or YYYY-MM-DD.")
+                else:
+                    if doc_type == "OR":
+                        or_expiration = validation_result['dates']['expiration_date']
+                        try:
+                            exp_date = datetime.strptime(or_expiration, "%m/%Y")
+                        except ValueError:
+                            exp_date = datetime.strptime(or_expiration, "%Y/%m/%d")
+                        exp_date = exp_date.replace(day=28) + timedelta(days=4)
+                        exp_date = exp_date - timedelta(days=exp_date.day)
+                    elif doc_type == "CR":
+                        try:
+                            exp_date = datetime.strptime(or_expiration, "%m/%Y")
+                        except ValueError:
+                            exp_date = datetime.strptime(or_expiration, "%Y/%m/%d")
+                        exp_date = exp_date.replace(day=28) + timedelta(days=4)
+                        exp_date = exp_date - timedelta(days=exp_date.day)
+                    else:
+                        exp_date = datetime.strptime(
+                            validation_result['dates']['expiration_date'],
+                            "%Y/%m/%d"
+                        )
 
                 documents_data.append({
                     "type": get_full_document_type(doc_type),
@@ -276,12 +410,12 @@ async def create_application(
                     "expired_at": exp_date.date()
                 })
             finally:
-                # Always try to clean up temp file, even if an exception occurs
-                try:
-                    if os.path.exists(validation_data["temp_path"]):
-                        os.remove(validation_data["temp_path"])
-                except Exception as e:
-                    print(f"Warning: Could not remove temporary file {validation_data['temp_path']}: {e}")
+                tp = validation_data.get("temp_path")
+                if tp and os.path.exists(tp):
+                    try:
+                        os.remove(tp)
+                    except Exception as e:
+                        print(f"Warning: Could not remove temporary file {tp}: {e}")
 
         # Create application data
         application_data = ApplicationCreate(

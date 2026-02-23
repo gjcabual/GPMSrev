@@ -36,9 +36,17 @@ def validate_credentials(extracted_text, reference_text, threshold):
     return similarity_score >= threshold, similarity_score
 
 def compare_text_array(text_array, uploaded_text, threshold, doc_type="DL", show_results=True):
-    """Compare text values based on document type"""
+    """
+    Compare expected values against OCR text.
+    - OR/CR: not used; validation is by extracted file number (OR file no. / MV file no.) only, not plate.
+    - DL: text_array is applicant details from step 1 [first_name, last_name, birth_date]; we check these appear on the DL.
+    """
     uploaded_text = uploaded_text.lower()
-    
+
+    # OR/CR are validated by file number only in compare_credentials; empty text_array is valid
+    if doc_type in ("OR", "CR") and not text_array:
+        return True, 1.0
+
     # Define field-specific validation rules
     validation_rules = {
         'sex': lambda text: (
@@ -55,7 +63,7 @@ def compare_text_array(text_array, uploaded_text, threshold, doc_type="DL", show
         'plate_no': lambda text: bool(re.match(r'^[A-Z0-9-]+$', text.upper())),
     }
 
-    # Split multi-part names into individual components
+    # Split multi-part names into individual components (for DL only)
     expanded_text_array = []
     for text in text_array:
         text_str = str(text).lower()
@@ -76,9 +84,9 @@ def compare_text_array(text_array, uploaded_text, threshold, doc_type="DL", show
         
         # Print expected fields based on document type
         field_descriptions = {
-            'DL': ['First Name', 'Last Name', 'Birth Date'],  # Removed Sex
-            'OR': ['Plate Number'],
-            'CR': ['Plate Number']
+            'DL': ['First Name', 'Last Name', 'Birth Date'],
+            'OR': ['File number only (plate not matched)'],
+            'CR': ['MV file number only (plate not matched)'],
         }
 
         for field in field_descriptions.get(doc_type, []):
@@ -86,11 +94,11 @@ def compare_text_array(text_array, uploaded_text, threshold, doc_type="DL", show
         
         print("\n=[ Individual field comparisons: ]=")
     
-    # Process each field or field-part
+    # Process each field or field-part (DL only; OR/CR handled above)
     index = 0
     for text in expanded_text_array:
         best_similarity = 0
-        
+
         # Apply special validation rules for specific fields
         if text in validation_rules:
             is_valid = validation_rules[text](uploaded_text)
@@ -121,101 +129,73 @@ def compare_text_array(text_array, uploaded_text, threshold, doc_type="DL", show
     
     return overall_similarity >= threshold, overall_similarity
 
+def _normalize_file_number(raw: str) -> str:
+    """Normalize file number: digits only, remove spaces/hyphens/OCR substitutions (O->0, l->1)."""
+    s = raw.replace(' ', '').replace('-', '').replace('—', '').replace('–', '')
+    s = s.replace('O', '0').replace('o', '0').replace('l', '1').replace('I', '1')
+    return ''.join(c for c in s if c.isdigit())
+
+
 def extract_document_reference(text: str, doc_type: str) -> dict:
     """
     Extract document file numbers in formats:
     - ####-########### (with hyphen)
+    - #### ########### (space instead of hyphen)
     - ############### (without hyphen)
     - Numbers split across lines or mixed with text
+    - 4-digit + 11-digit or 3-digit + 12-digit adjacent in text
     """
-    import re
-    
     result = {
         "file_number": None,
         "is_valid": False,
         "error": None
     }
 
-    # Look for complete patterns first
     primary_patterns = [
-        r'\b(\d{4}-\d{11})\b',     # With hyphen
-        r'\b(\d{15})\b',           # Without hyphen
+        r'\b(\d{4}[-—–\s]\d{11})\b',  # Hyphen, em-dash, en-dash, or space
+        r'\b(\d{4}-\d{11})\b',
+        r'\b(\d{4}\s+\d{11})\b',
+        r'\b(\d{15})\b',
     ]
-    
+
     try:
         file_number = None
-        
-        # Try complete patterns first
+
         for pattern in primary_patterns:
             matches = re.findall(pattern, text)
             if matches:
-                file_number = matches[0]
-                break
-        
-        # If no complete match found and it's a CR document
-        if not file_number and doc_type == "CR":
-            # Look for a pattern specific to CR documents
-            # Find a 3-digit number followed by a 12-digit number
-            lines = text.split('\n')
-            numbers_by_line = []
-            
-            # Extract all numbers from each line
-            for line in lines:
-                line_numbers = re.findall(r'\d+', line)
-                if line_numbers:
-                    numbers_by_line.append(line_numbers)
-            
-            # Special case for CR: look for "150" followed by "125003567970"
-            three_digit = None
-            twelve_digit = None
-            
-            for numbers in numbers_by_line:
-                for num in numbers:
-                    if len(num) == 3 and num.isdigit():
-                        three_digit = num
-                    elif len(num) == 12 and num.isdigit():
-                        twelve_digit = num
-            
-            # If we found both parts, combine them
-            if three_digit and twelve_digit:
-                file_number = three_digit + twelve_digit
-                print(f"Combined CR file number: {file_number}")
-        
-        # If still not found, try a more aggressive approach
-        if not file_number:
-            # Extract all number sequences from the text
+                file_number = _normalize_file_number(matches[0])
+                if len(file_number) == 15 and file_number.isdigit():
+                    break
+
+        # Fallback: find 4-digit + 11-digit or 3-digit + 12-digit adjacent
+        if not file_number or len(file_number) != 15:
             all_numbers = re.findall(r'\d+', text)
-            
-            # Print found numbers for debugging
-            print(f"All numbers found: {all_numbers}")
-            
-            # Look for a 12-digit number
-            for num in all_numbers:
-                if len(num) == 12:
-                    # Look for a 3-digit number to combine with it
-                    for prefix in all_numbers:
-                        if len(prefix) == 3:
-                            combined = prefix + num
-                            if len(combined) == 15:
-                                file_number = combined
-                                print(f"Found by combining {prefix} + {num} = {combined}")
-                                break
-                    if file_number:
-                        break
-        
-        if not file_number:
+            normalized = [_normalize_file_number(n) for n in all_numbers]
+
+            for i, num in enumerate(normalized):
+                if len(num) == 11:
+                    for j, pre in enumerate(normalized):
+                        if i != j and len(pre) == 4 and (pre + num).isdigit():
+                            file_number = pre + num
+                            break
+                elif len(num) == 12:
+                    for j, pre in enumerate(normalized):
+                        if i != j and len(pre) == 3 and (pre + num).isdigit():
+                            file_number = pre + num
+                            break
+                if file_number and len(file_number) == 15:
+                    break
+
+        if not file_number or len(file_number) != 15 or not file_number.isdigit():
             result["error"] = f"No valid {doc_type} file number found"
             return result
-        
-        # Normalize format (remove any spaces or hyphens)
-        file_number = file_number.replace(' ', '').replace('-', '')
-        
-        # Store 15-digit number
+
         result["file_number"] = file_number
         result["is_valid"] = True
-        
+
     except Exception as e:
         result["error"] = f"Error processing {doc_type} file number: {str(e)}"
         print(f"Exception in extract_document_reference: {str(e)}")
-    
+
     return result

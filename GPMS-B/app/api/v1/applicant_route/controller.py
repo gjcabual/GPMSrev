@@ -126,6 +126,15 @@ class ApplicantController:
                         )
                         self.db.add(assigned_driver)
 
+                # Create initial Pending status so the application appears in staff/admin pending lists
+                initial_status = ApplicationStatus(
+                    status="Pending",
+                    date=current_date,
+                    application_id=application.application_id,
+                    processed_by=None
+                )
+                self.db.add(initial_status)
+
                 await self.db.commit()
 
                 # Get the estimated sticker price based on role

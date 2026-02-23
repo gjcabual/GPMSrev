@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { buildUrl } from "../../utils/buildUrl";
 import { IoCloseCircle } from "react-icons/io5";
 import { SuccessModal } from "../response/ResponseModal";
+import { toast } from "sonner";
 
 export const ApproveModal = ({
  data,
@@ -13,6 +14,9 @@ export const ApproveModal = ({
  const [status, setStatus] = useState(initialStatus);
  const [message, setMessage] = useState("");
 
+ // Support both nested (data.applicant.application_id) and flat (data.application_id) shapes
+ const applicationId = data?.application_id ?? data?.applicant?.application_id;
+
  useEffect(() => {
   document.body.style.overflow = "hidden";
 
@@ -22,9 +26,14 @@ export const ApproveModal = ({
  }, []);
 
  const handleApprove = async () => {
+  if (applicationId == null || applicationId === "") {
+   console.error("ApproveModal: missing application_id", data);
+   toast.error("Application ID is missing. Please select an application again.");
+   return;
+  }
   const formData = new FormData();
   formData.append("status", status);
-  formData.append("application_id", data.applicant.application_id);
+  formData.append("application_id", String(applicationId));
   try {
    const res = await fetch(buildUrl("/staff/application-status/update"), {
     method: "POST",
@@ -43,16 +52,22 @@ export const ApproveModal = ({
     setTimeout(() => {
      // Call the success callback to update parent component data
      if (onSuccess) {
-      onSuccess(data.applicant.application_id, status);
+      onSuccess(applicationId, status);
      }
 
      // Close modal only after showing success message
      close();
     }, 3000);
+   } else {
+    console.error("Approve failed:", responseData);
+    const d = responseData?.detail;
+    const msg = Array.isArray(d) ? (d[0]?.msg ?? d[0]?.message ?? "Failed to update application.") : (typeof d === "string" ? d : "Failed to update application.");
+    toast.error(msg);
    }
    console.log(responseData);
   } catch (err) {
-   console.log(err);
+   console.error("Approve error:", err);
+   toast.error("Request failed. Please try again.");
   }
  };
 
@@ -88,22 +103,19 @@ export const ApproveModal = ({
         <div className="flex items-center gap-2">
          <span className="w-24 text-gray-600 font-medium">Name:</span>
          <span className="flex items-center h-10 px-4 rounded-md bg-slate-100 text-md w-full font-medium text-gray-500">
-          {data.applicant.name}
+          {data?.applicant?.name ?? data?.full_name ?? "—"}
          </span>
         </div>
         <div className="flex items-center gap-2">
          <span className="w-24 text-gray-600 font-medium">Sticker ID:</span>
          <span className="flex items-center h-10 px-4 rounded-md bg-slate-100 text-md w-full font-medium text-gray-500">
-          {data.applicant.vehicle.sticker &&
-          data.applicant.vehicle.sticker.sticker_id
-           ? data.applicant.vehicle.sticker.sticker_id
-           : "##-####"}
+          {data?.applicant?.vehicle?.sticker?.sticker_id ?? data?.sticker_id ?? "##-####"}
          </span>
         </div>
         <div className="flex items-center gap-2">
          <span className="w-24 text-gray-600 font-medium">Plate:</span>
          <span className="flex items-center h-10 px-4 rounded-md bg-slate-100 text-md w-full font-medium text-gray-500">
-          {data.applicant.vehicle.plate_no}
+          {data?.applicant?.vehicle?.plate_no ?? data?.plate_number ?? "—"}
          </span>
         </div>
        </div>
