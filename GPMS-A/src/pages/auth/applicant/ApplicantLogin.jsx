@@ -67,13 +67,13 @@ export const ApplicantLogin = () => {
 
     return (
         <>
-            <div className="min-h-screen flex flex-col gap-4 md:gap-5 justify-center items-center bg-gray-100 px-4 py-6 md:py-10">
+            <div className="min-h-screen w-full flex flex-col justify-center items-center bg-gray-100 p-4 gap-4">
                 {/* Logo */}
                 <img
-                    onClick={() => nav("/gpms")}
+                    onClick={() => nav("/")}
                     src="/main_logo.png"
                     alt=""
-                    className="w-[200px] md:w-[300px] z-50 cursor-pointer"
+                    className="w-48 md:w-[300px] z-50 cursor-pointer flex-shrink-0"
                 />
 
                 {/* Background Image */}
@@ -91,8 +91,25 @@ export const ApplicantLogin = () => {
                 </div>
 
                 {/* Login Form */}
-                <div className="w-full max-w-[90%] md:max-w-[500px] h-auto rounded-xl bg-white z-50 p-6 md:p-8">
+                <div className="w-full max-w-[500px] h-auto rounded-xl bg-white z-50 p-4 sm:p-6 md:p-8">
                     <h1 className="text-lg md:text-xl font-medium">Login</h1>
+                    <div className="mt-4 flex flex-col gap-1">
+                        <label htmlFor="login-as" className="text-sm text-gray-600">Login as</label>
+                        <select
+                            id="login-as"
+                            value="applicant"
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === "staff") nav("/staff-login");
+                                else if (v === "admin") nav("/admin-login");
+                            }}
+                            className="border border-gray-500 px-4 h-10 rounded-md outline-none text-sm font-medium cursor-pointer"
+                        >
+                            <option value="applicant">Applicant</option>
+                            <option value="staff">Staff</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
                     <div className="space-y-5 mt-5">
                         {/* Email Input */}
                         <div className="flex flex-col">
@@ -179,14 +196,6 @@ export const ApplicantLogin = () => {
                             <span className="italic text-primary font-medium">Signup here</span>
                         </button>
                     </div>
-                </div>
-                <div className="z-50">
-                    <button
-                        className="h-10 bg-white rounded-md px-4 p-4 flex items-center justify-center text-primary text-sm font-semibold z-[100] cursor-pointer"
-                        onClick={() => nav("/role")}
-                    >
-                        Log in as admin or staff
-                    </button>
                 </div>
             </div>
         </>

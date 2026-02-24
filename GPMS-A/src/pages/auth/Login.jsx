@@ -53,7 +53,7 @@ export const Login = () => {
 
  return (
   <>
-   <div className="min-h-screen flex flex-col gap-4 md:gap-5 justify-center items-center bg-gray-100 px-4 py-6 md:py-10">
+   <div className="min-h-screen w-full flex flex-col justify-center items-center bg-gray-100 p-4 gap-4">
     <img src="/main_logo.png" alt="" className="w-48 md:w-[300px] z-50 flex-shrink-0" />
     <img
      src="/auth/bg_login.png"
@@ -67,6 +67,24 @@ export const Login = () => {
     </div>
     <div className="w-full max-w-[500px] h-auto rounded-xl bg-white z-50 p-4 sm:p-6 md:p-8">
      <h1 className="text-lg md:text-xl font-medium">Login</h1>
+     <div className="mt-4 flex flex-col gap-1">
+      <label htmlFor="login-as" className="text-sm text-gray-600">Login as</label>
+      <select
+       id="login-as"
+       value={role}
+       onChange={(e) => {
+        const v = e.target.value;
+        if (v === "applicant") nav("/applicant-login");
+        else if (v === "staff") nav("/staff-login");
+        else if (v === "admin") nav("/admin-login");
+       }}
+       className="border border-gray-500 px-4 h-10 rounded-md outline-none text-sm font-medium cursor-pointer"
+      >
+       <option value="applicant">Applicant</option>
+       <option value="staff">Staff</option>
+       <option value="admin">Admin</option>
+      </select>
+     </div>
      <div className="space-y-5 mt-5">
       <div className="flex flex-col">
        <label htmlFor="">Email</label>
@@ -123,12 +141,6 @@ export const Login = () => {
       </div>
      </div>
      <div className="mt-8 md:mt-10 text-center flex flex-col gap-2">
-      <button
-       onClick={() => nav(-1)}
-       className="text-xs md:text-sm font-medium text-gray-500 cursor-pointer py-2"
-      >
-       return to role selection
-      </button>
       <button
        onClick={() => handleLogin()}
        className="w-full text-base md:text-lg text-white bg-primary h-10 rounded-md cursor-pointer hover:opacity-90 transition-opacity"
