@@ -13,6 +13,9 @@ export const Role = () => {
    case "staff":
     nav("/staff-login");
     break;
+   case "applicant":
+    nav("/applicant-signup");
+    break;
    default:
     break;
   }
@@ -24,7 +27,7 @@ export const Role = () => {
     <img
      src="/main_logo.png"
      alt=""
-     onClick={() => nav("/gpms")}
+     onClick={() => nav("/")}
      className="w-[300px] z-50 cursor-pointer"
     />
     <img
@@ -52,6 +55,9 @@ export const Role = () => {
         onChange={(e) => setRole(e.target.value)}
         className="w-full px-4 border border-primary h-10 rounded mt-5 text-sm font-medium"
        >
+        <option value="applicant">
+         Applicant (Gate Pass)
+        </option>
         <option value="admin">
          Office of the Security and Safety Services (Admin)
         </option>
@@ -65,7 +71,7 @@ export const Role = () => {
          Copyright @ 2025 Caraga State University
         </p>
         <div className="flex items-center gap-4">
-         <button onClick={() => nav("/gpms")} className="cursor-pointer">Back</button>
+         <button onClick={() => nav("/")} className="cursor-pointer">Back</button>
          <button
           onClick={() => handleNav()}
           className="h-10 rounded-md px-4 text-white bg-primary"

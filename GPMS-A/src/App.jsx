@@ -12,6 +12,7 @@ function App() {
    <Toaster richColors position="top-center" />
    <Router>
     <Routes>
+     <Route path="/" element={<Landing />} />
      <Route path="/gpms" element={<Landing />} />
      <Route path="/*" element={<AuthRoutes />} />
      <Route path="/admin/*" element={<AdminRoutes />} />

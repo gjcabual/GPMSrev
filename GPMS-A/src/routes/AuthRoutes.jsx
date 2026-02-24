@@ -13,6 +13,7 @@ export const AuthRoutes = () => {
  return (
   <>
    <Routes>
+    <Route path="/role" element={<Role />} />
     <Route path="/*" element={<Role />} />
     <Route path="/admin-login" element={<Login />} />
     <Route path="/staff-login" element={<Login />} />
