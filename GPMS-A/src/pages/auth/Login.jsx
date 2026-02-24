@@ -53,20 +53,20 @@ export const Login = () => {
 
  return (
   <>
-   <div className="h-screen flex flex-col gap-5 justify-center items-center bg-gray-100">
-    <img src="/main_logo.png" alt="" className="w-[300px] z-50" />
+   <div className="min-h-screen flex flex-col gap-4 md:gap-5 justify-center items-center bg-gray-100 px-4 py-6 md:py-10">
+    <img src="/main_logo.png" alt="" className="w-48 md:w-[300px] z-50 flex-shrink-0" />
     <img
      src="/auth/bg_login.png"
      alt=""
-     className="w-full h-full absolute opacity-50"
+     className="w-full h-full absolute opacity-50 object-cover pointer-events-none"
     />
-    <div>
-     <p className="text-xl font-semibold text-primary z-50">
+    <div className="z-50">
+     <p className="text-lg md:text-xl font-semibold text-primary">
       -- {role.toUpperCase()} ---
      </p>
     </div>
-    <div className="w-[500px] h-auto rounded-xl bg-white z-50 p-8">
-     <h1 className="text-xl font-medium">Login</h1>
+    <div className="w-full max-w-[500px] h-auto rounded-xl bg-white z-50 p-4 sm:p-6 md:p-8">
+     <h1 className="text-lg md:text-xl font-medium">Login</h1>
      <div className="space-y-5 mt-5">
       <div className="flex flex-col">
        <label htmlFor="">Email</label>
@@ -106,32 +106,32 @@ export const Login = () => {
        </div>
       </div>
      </div>
-     <div className="flex items-center justify-between mt-2">
+     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mt-2 gap-2">
       <div className="flex items-center gap-1">
-       <input type="checkbox" />
-       <label htmlFor="" className="text-sm">
+       <input type="checkbox" className="cursor-pointer" />
+       <label htmlFor="" className="text-xs md:text-sm cursor-pointer">
         Remember me
        </label>
       </div>
       <div>
        <p
         onClick={() => nav("/forgot-password")}
-        className="text-sm text-gray-500 font-medium cursor-pointer"
+        className="text-xs md:text-sm text-gray-500 font-medium cursor-pointer"
        >
-        forgot password?{" "}
+        forgot password?
        </p>
       </div>
      </div>
-     <div className="mt-10 text-center flex flex-col gap-2">
+     <div className="mt-8 md:mt-10 text-center flex flex-col gap-2">
       <button
        onClick={() => nav(-1)}
-       className="text-sm font-medium text-gray-500 cursor-pointer"
+       className="text-xs md:text-sm font-medium text-gray-500 cursor-pointer py-2"
       >
        return to role selection
       </button>
       <button
        onClick={() => handleLogin()}
-       className="w-full text-lg text-white bg-primary h-10 rounded-md cursor-pointer"
+       className="w-full text-base md:text-lg text-white bg-primary h-10 rounded-md cursor-pointer hover:opacity-90 transition-opacity"
       >
        Login
       </button>

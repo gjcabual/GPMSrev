@@ -89,7 +89,7 @@ export const Header = ({ isSidebarOpen, setIsSidebarOpen }) => {
     <div className="flex items-center gap-1.5 sm:gap-2">
      {/* Sidebar Toggle Button (Mobile Only) */}
      <button
-      onClick={() => setIsSidebarOpen((prev) => !prev)}
+      onClick={() => setIsSidebarOpen?.((prev) => !prev)}
       className={`md:hidden ${
        isSidebarOpen ? "hidden" : "block"
       } p-1.5 sm:p-2 bg-primary text-white rounded-lg`}

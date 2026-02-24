@@ -23,7 +23,7 @@ export const ApplicantLayout = ({ children }) => {
      />
 
      {/* Page Content */}
-     <div className="m-[30px] flex-1 overflow-auto">{children}</div>
+     <div className="m-4 md:m-[30px] flex-1 overflow-auto">{children}</div>
     </div>
    </div>
   </>

@@ -53,16 +53,16 @@ export const ForgotPassword = () => {
 
  return (
   <>
-   <div className="h-screen flex flex-col gap-10 justify-center items-center bg-gray-100">
-    <img src="/main_logo.png" alt="" className="w-[300px] z-50" />
+   <div className="min-h-screen flex flex-col gap-6 md:gap-10 justify-center items-center bg-gray-100 px-4 py-6 md:py-10">
+    <img src="/main_logo.png" alt="" className="w-48 md:w-[300px] z-50 flex-shrink-0" />
     <img
      src="/auth/bg_login.png"
      alt=""
-     className="w-full h-full absolute opacity-50"
+     className="w-full h-full absolute opacity-50 object-cover pointer-events-none"
     />
-    <div className="w-[700px] h-auto p-8 rounded-xl bg-white z-50">
-     <div className="flex items-center justify-between">
-      <h1 className="text-xl font-medium">Forgot Password?</h1>
+    <div className="w-full max-w-[700px] h-auto p-4 sm:p-6 md:p-8 rounded-xl bg-white z-50">
+     <div className="flex items-center justify-between gap-2">
+      <h1 className="text-lg md:text-xl font-medium">Forgot Password?</h1>
       <IoCloseCircle
        onClick={() => nav(-1)}
        size={24}
@@ -70,7 +70,7 @@ export const ForgotPassword = () => {
       />
      </div>
      <div className="mt-5">
-      <p className="text-gray-500 font-light">
+      <p className="text-gray-500 font-light text-sm md:text-base">
        No worries! As long as you have your email account, you can always
        retrieve it anytime.
       </p>
@@ -144,8 +144,8 @@ const Spinner = () => {
 
 const OtpSent = ({ email, onClose, onProceed }) => {
  return (
-  <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-[100]">
-   <div className="w-[500px] bg-white rounded-xl p-6">
+  <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+   <div className="w-full max-w-[500px] bg-white rounded-xl p-4 sm:p-6">
     <div className="flex items-center justify-between">
      <h2 className="text-xl font-medium">Email Sent</h2>
      <IoClose

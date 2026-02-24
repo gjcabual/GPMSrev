@@ -67,7 +67,7 @@ export const ApplicantLogin = () => {
 
     return (
         <>
-            <div className="h-screen flex flex-col gap-5 justify-center items-center bg-gray-100">
+            <div className="min-h-screen flex flex-col gap-4 md:gap-5 justify-center items-center bg-gray-100 px-4 py-6 md:py-10">
                 {/* Logo */}
                 <img
                     onClick={() => nav("/gpms")}
@@ -183,7 +183,7 @@ export const ApplicantLogin = () => {
                 <div className="z-50">
                     <button
                         className="h-10 bg-white rounded-md px-4 p-4 flex items-center justify-center text-primary text-sm font-semibold z-[100] cursor-pointer"
-                        onClick={() => nav("/login")}
+                        onClick={() => nav("/role")}
                     >
                         Log in as admin or staff
                     </button>

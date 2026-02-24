@@ -6,8 +6,14 @@ export const Landing = () => {
  return (
   <div className="h-screen flex flex-col gap-10 justify-start bg-gray-100 relative overflow-hidden">
    {/* Navbar */}
-   <div className="px-5 md:px-20 w-full h-20 bg-gray-100 z-50 flex items-center justify-start">
+   <div className="px-5 md:px-20 w-full h-20 bg-gray-100 z-50 flex items-center justify-between">
     <img src="/main_logo.png" alt="" className="w-32 md:w-48" />
+    <button
+     onClick={() => nav("/applicant-login")}
+     className="text-sm md:text-base cursor-pointer text-gray-600 hover:text-primary"
+    >
+     Login
+    </button>
    </div>
 
    {/* Background Image */}
@@ -34,7 +40,7 @@ export const Landing = () => {
      <div className="mt-6 md:mt-10">
       <button
        onClick={() => nav("/role")}
-       className="bg-primary text-white h-10 rounded-md px-4 text-sm md:text-base"
+       className="bg-primary text-white h-10 rounded-md px-4 text-sm md:text-base cursor-pointer hover:opacity-90 transition-opacity"
       >
        Get Started
       </button>

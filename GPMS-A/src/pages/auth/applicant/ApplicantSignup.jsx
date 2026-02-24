@@ -118,12 +118,12 @@ export const ApplicantSignup = () => {
 
  return (
   <>
-   <div className="m-5 md:m-0 min-h-screen py-5 flex flex-col gap-5 justify-center items-center bg-gray-100">
+   <div className="min-h-screen py-6 px-4 md:py-10 flex flex-col gap-4 md:gap-5 justify-center items-center bg-gray-100">
     <img
-     onClick={() => nav("/gpms")}
+     onClick={() => nav("/")}
      src="/main_logo.png"
      alt=""
-     className="w-[300px] z-50 cursor-pointer"
+     className="w-48 md:w-[300px] z-50 cursor-pointer flex-shrink-0"
     />
     <img
      src="/auth/bg_login.png"
@@ -131,12 +131,12 @@ export const ApplicantSignup = () => {
      className="fixed top-0 left-0 w-screen h-screen object-cover opacity-50"
     />
 
-    <div>
-     <p className="text-xl font-semibold text-primary z-50">-- APPLICANT ---</p>
+    <div className="z-50">
+     <p className="text-lg md:text-xl font-semibold text-primary">-- APPLICANT ---</p>
     </div>
     {!showVerifier ? (
-     <div className="w-full md:w-[600px] h-auto rounded-xl bg-white z-50 p-8">
-      <h1 className="text-2xl font-semibold">Signup</h1>
+     <div className="w-full max-w-[600px] h-auto rounded-xl bg-white z-50 p-4 sm:p-6 md:p-8">
+      <h1 className="text-xl md:text-2xl font-semibold">Signup</h1>
       <p className="text-sm font-light text-gray-400">
        Fill-up the information below to proceed
       </p>

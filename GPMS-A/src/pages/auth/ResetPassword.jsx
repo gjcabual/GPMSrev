@@ -82,16 +82,16 @@ export const ResetPassword = () => {
 
  return (
   <>
-   <div className="h-screen flex flex-col gap-10 justify-center items-center bg-gray-100">
-    <img src="/main_logo.png" alt="" className="w-[300px] z-50" />
+   <div className="min-h-screen flex flex-col gap-6 md:gap-10 justify-center items-center bg-gray-100 px-4 py-6 md:py-10">
+    <img src="/main_logo.png" alt="" className="w-48 md:w-[300px] z-50 flex-shrink-0" />
     <img
      src="/auth/bg_login.png"
      alt=""
-     className="w-full h-full absolute opacity-50"
+     className="w-full h-full absolute opacity-50 object-cover pointer-events-none"
     />
-    <div className="w-[500px] h-auto p-8 rounded-xl bg-white z-50">
-     <div className="flex items-center justify-between">
-      <h1 className="text-2xl font-semibold">Reset Password</h1>
+    <div className="w-full max-w-[500px] h-auto p-4 sm:p-6 md:p-8 rounded-xl bg-white z-50">
+     <div className="flex items-center justify-between gap-2">
+      <h1 className="text-xl md:text-2xl font-semibold">Reset Password</h1>
       <IoCloseCircle
        onClick={() => nav(-1)}
        size={24}

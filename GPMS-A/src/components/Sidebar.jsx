@@ -64,7 +64,7 @@ export const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
    >
     {/* Close Button - Positioned absolutely */}
     <button
-     onClick={() => setIsSidebarOpen((prev) => !prev)}
+     onClick={() => setIsSidebarOpen?.((prev) => !prev)}
      className={`absolute top-5 -right-4 md:hidden p-2 bg-primary text-white rounded-lg ${
       isSidebarOpen ? "block" : "hidden"
      }`}
