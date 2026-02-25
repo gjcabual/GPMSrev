@@ -69,8 +69,8 @@ export const Application = () => {
 
  const choice = ["Employee Parking", "Student", "Drop Off", "Concessionaire"];
 
- // Show application steps first (home); role selection hidden unless user clicks Back from step 0
- const [type, setType] = useState(false);
+ // Show sticker purpose selection first; after "Proceed" show application steps
+ const [type, setType] = useState(true);
 
  // Update vehicleData when vehicleFormData changes
  useEffect(() => {

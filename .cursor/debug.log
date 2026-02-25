@@ -1,0 +1,108 @@
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"staff"},"timestamp":1771923840355,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"staff"},"timestamp":1771923840354,"hypothesisId":"H3"}
+{"location":"AuthRoutes.jsx:render","message":"AuthRoutes rendered","data":{"pathname":"/applicant-login"},"timestamp":1771923847400,"hypothesisId":"H1"}
+{"location":"AuthRoutes.jsx:render","message":"AuthRoutes rendered","data":{"pathname":"/applicant-login"},"timestamp":1771923847401,"hypothesisId":"H1"}
+{"location":"ApplicantLogin.jsx:nav","message":"About to navigate after login","data":{"target":"/applicant/dashboard"},"timestamp":1771923853953,"hypothesisId":"H5"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/dashboard"},"timestamp":1771923855469,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:loading","message":"Showing auth loading","data":{"allowedRole":"applicant"},"timestamp":1771923855479,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:loading","message":"Showing auth loading","data":{"allowedRole":"applicant"},"timestamp":1771923855479,"hypothesisId":"H3"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/dashboard"},"timestamp":1771923855471,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:checkAuth","message":"Auth check result","data":{"allowedRole":"applicant","ok":true,"status":200,"isAuthorized":true},"timestamp":1771923855553,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923855554,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923855555,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923855571,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923855573,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923855578,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923855579,"hypothesisId":"H4"}
+{"location":"ProtectedRoute.jsx:checkAuth","message":"Auth check result","data":{"allowedRole":"applicant","ok":true,"status":200,"isAuthorized":true},"timestamp":1771923855605,"hypothesisId":"H3"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/my-application"},"timestamp":1771923859135,"hypothesisId":"H1"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/my-application"},"timestamp":1771923859136,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923859174,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923859175,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923859139,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923859160,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923859157,"hypothesisId":"H4"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923859139,"hypothesisId":"H3"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/dashboard"},"timestamp":1771923862016,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923862018,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923862020,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923862029,"hypothesisId":"H4"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/dashboard"},"timestamp":1771923862017,"hypothesisId":"H1"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923862029,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923862032,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923862033,"hypothesisId":"H4"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/profile"},"timestamp":1771923863615,"hypothesisId":"H1"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/profile"},"timestamp":1771923863615,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923863616,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923863617,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923863625,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923863626,"hypothesisId":"H4"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/dashboard"},"timestamp":1771923865505,"hypothesisId":"H1"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/dashboard"},"timestamp":1771923865505,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923865507,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923865508,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923865516,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923865516,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923865519,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923865520,"hypothesisId":"H4"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/application"},"timestamp":1771923869247,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923869249,"hypothesisId":"H3"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/application"},"timestamp":1771923869248,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923869250,"hypothesisId":"H3"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/dashboard"},"timestamp":1771923871442,"hypothesisId":"H1"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/dashboard"},"timestamp":1771923871443,"hypothesisId":"H1"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923871456,"hypothesisId":"H4"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923871445,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923871445,"hypothesisId":"H3"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923871453,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923871451,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923871456,"hypothesisId":"H4"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/my-application"},"timestamp":1771923872967,"hypothesisId":"H1"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/my-application"},"timestamp":1771923872968,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923872970,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923872970,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923872976,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923872977,"hypothesisId":"H4"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/profile"},"timestamp":1771923873368,"hypothesisId":"H1"}
+{"location":"ApplicantRoutes.jsx:render","message":"ApplicantRoutes rendered","data":{"pathname":"/applicant/profile"},"timestamp":1771923873369,"hypothesisId":"H1"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923873370,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923873370,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923873377,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923873378,"hypothesisId":"H4"}
+{"location":"ProtectedRoute.jsx:loading","message":"Showing auth loading","data":{"allowedRole":"applicant"},"timestamp":1771923898797,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:loading","message":"Showing auth loading","data":{"allowedRole":"applicant"},"timestamp":1771923898799,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:checkAuth","message":"Auth check result","data":{"allowedRole":"applicant","ok":true,"status":200,"isAuthorized":true},"timestamp":1771923898873,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923898874,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923898875,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923898897,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923898900,"hypothesisId":"H4"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923903593,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923903594,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923903601,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923903603,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923903605,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923903606,"hypothesisId":"H4"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923914778,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923914783,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923918778,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923918781,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923921790,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923921792,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923924937,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923924938,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923924946,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923924949,"hypothesisId":"H4"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923928753,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923928754,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923928762,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923928763,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923928767,"hypothesisId":"H4"}
+{"location":"Dashboard.jsx:mount","message":"Dashboard mounted","data":{},"timestamp":1771923928767,"hypothesisId":"H4"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923934176,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923934177,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923934185,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923934187,"hypothesisId":"H4"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923935336,"hypothesisId":"H3"}
+{"location":"ProtectedRoute.jsx:children","message":"Rendering protected children","data":{"allowedRole":"applicant"},"timestamp":1771923935337,"hypothesisId":"H3"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923935351,"hypothesisId":"H4"}
+{"location":"ApplicantLayout.jsx:mount","message":"ApplicantLayout mounted","data":{},"timestamp":1771923935349,"hypothesisId":"H4"}

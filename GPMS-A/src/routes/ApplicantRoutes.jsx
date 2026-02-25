@@ -13,7 +13,7 @@ export const ApplicantRoutes = () => {
    <Toaster richColors position="top-center" />
    <Routes>
     <Route
-     path="/dashboard"
+     path="dashboard"
      element={
       <ProtectedRoute allowedRole="applicant">
        <Dashboard />
@@ -21,7 +21,7 @@ export const ApplicantRoutes = () => {
      }
     />
     <Route
-     path="/my-application"
+     path="my-application"
      element={
       <ProtectedRoute allowedRole="applicant">
        <MyApplication />
@@ -29,7 +29,7 @@ export const ApplicantRoutes = () => {
      }
     />
     <Route
-     path="/profile"
+     path="profile"
      element={
       <ProtectedRoute allowedRole="applicant">
        <Profile />
@@ -37,7 +37,7 @@ export const ApplicantRoutes = () => {
      }
     />
     <Route
-     path="/application"
+     path="application"
      element={
       <ProtectedRoute allowedRole="applicant">
        <Application />
@@ -45,7 +45,7 @@ export const ApplicantRoutes = () => {
      }
     />
     <Route
-     path="/application/review/:id"
+     path="application/review/:id"
      element={
       <ProtectedRoute allowedRole="applicant">
        <ApplicationReview />

@@ -14,10 +14,10 @@ function App() {
     <Routes>
      <Route path="/" element={<Landing />} />
      <Route path="/gpms" element={<Landing />} />
-     <Route path="/*" element={<AuthRoutes />} />
      <Route path="/admin/*" element={<AdminRoutes />} />
      <Route path="/staff/*" element={<StaffRoutes />} />
      <Route path="/applicant/*" element={<ApplicantRoutes />} />
+     <Route path="/*" element={<AuthRoutes />} />
     </Routes>
    </Router>
   </>
