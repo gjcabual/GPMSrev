@@ -6,7 +6,7 @@ export const Setting = () => {
   <>
    <StaffLayout>
     <div>
-     <h1 className="text-2xl font-semibold">Settings</h1>
+     <h1 className="text-2xl font-semibold">Profile</h1>
     </div>
     <div className="mt-10">
      <ProfileContent />

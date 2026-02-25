@@ -666,9 +666,12 @@ export const Application = () => {
        // Only show next button if not on step 2 (verification step)
        currentStep !== 1 && (
         <button
-         className="bg-primary h-10 px-4 rounded-md text-white font-medium disabled:bg-gray-300 flex items-center gap-2 cursor-pointer"
+         className="bg-primary h-10 px-4 rounded-md text-white font-medium disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
          onClick={handleNextStep}
-         disabled={(isRequestingOTP || isExtracting) && !hasApiError}
+         disabled={
+          (currentStep === 0 && !agreedToTerms) ||
+          ((isRequestingOTP || isExtracting) && !hasApiError)
+         }
         >
          {isRequestingOTP || isExtracting ? (
           <>

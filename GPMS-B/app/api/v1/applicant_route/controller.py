@@ -139,14 +139,16 @@ class ApplicantController:
 
                 # Get the estimated sticker price based on role
                 estimated_price = await self.get_sticker_price_by_role(application_data.role)
-                
-                # Send notification email with estimated price
-                await send_payment_slip_email(
+
+                # Send gatepass slip email to applicant (payment slip with estimated price)
+                slip_sent = await send_payment_slip_email(
                     db=self.db,
                     user_id=user_id,
                     nature_of_payment=f"New Parking Sticker Application ({application_data.role})",
-                    total_amount=estimated_price  # Use estimated price instead of 0
+                    total_amount=estimated_price,
                 )
+                if not slip_sent:
+                    print(f"Warning: Gatepass slip email was not sent to applicant user_id={user_id}, application_id={application.application_id}. Check server logs and EMAIL_* env vars.")
 
                 # Format response with both application and driver details
                 result = {
@@ -296,18 +298,20 @@ class ApplicantController:
             # Run cleanup first to remove stale applications
             await cleanup_stale_applications(self.db)
             
-            # Base query
+            # Return applications that are Pending and not yet submitted (no slip):
+            # created but awaiting payment / upload receipt.
             query = (
                 select(
                     Application,
                     Vehicle
                 )
                 .join(Vehicle, Application.plate_no == Vehicle.plate_no)
-                .outerjoin(ApplicationStatus, Application.application_id == ApplicationStatus.application_id)
+                .join(ApplicationStatus, Application.application_id == ApplicationStatus.application_id)
                 .where(
                     and_(
                         Application.user_id == user_id,
-                        ApplicationStatus.status_id == None
+                        ApplicationStatus.status == "Pending",
+                        Application.slip_id == None
                     )
                 )
             )
@@ -317,20 +321,29 @@ class ApplicantController:
                 query = query.where(Vehicle.vehicle_type == vehicle_type)
 
             result = await self.db.execute(query)
-            applications = result.fetchall()
+            rows = result.fetchall()
+
+            # Deduplicate by application_id (one app can have multiple status rows)
+            seen_ids = set()
+            applications = []
+            for app, vehicle in rows:
+                if app.application_id in seen_ids:
+                    continue
+                seen_ids.add(app.application_id)
+                applications.append((app, vehicle))
 
             return [
                 {
-                    "application_id": app.Application.application_id,  
-                    "plate": app.Vehicle.plate_no,
-                    "model": app.Vehicle.model,
-                    "brand": app.Vehicle.brand,
-                    "application_role": app.Application.role,
-                    "vehicle_type": app.Vehicle.vehicle_type,
-                    "front_image": f"/applicant/vehicle/{app.Vehicle.plate_no}/image/front" if app.Vehicle.front_image else None,
-                    "back_image": f"/applicant/vehicle/{app.Vehicle.plate_no}/image/back" if app.Vehicle.back_image else None
+                    "application_id": app.application_id,
+                    "plate": vehicle.plate_no,
+                    "model": vehicle.model,
+                    "brand": vehicle.brand,
+                    "application_role": app.role,
+                    "vehicle_type": vehicle.vehicle_type,
+                    "front_image": f"/applicant/vehicle/{vehicle.plate_no}/image/front" if vehicle.front_image else None,
+                    "back_image": f"/applicant/vehicle/{vehicle.plate_no}/image/back" if vehicle.back_image else None
                 }
-                for app in applications
+                for app, vehicle in applications
             ]
 
         except Exception as e:
@@ -1525,6 +1538,16 @@ class ApplicantController:
             slip.nature_of_payment = f"Parking Sticker Application ({', '.join(role_groups.keys())})"
             
             await self.db.commit()
+
+            # Send gatepass slip email to applicant with actual amount and slip details
+            slip_sent = await send_payment_slip_email(
+                db=self.db,
+                user_id=user_id,
+                nature_of_payment=slip.nature_of_payment,
+                total_amount=total_amount,
+            )
+            if not slip_sent:
+                print(f"Warning: Gatepass slip email was not sent after submit (user_id={user_id}, slip_id={slip.slip_id}). Check server logs and EMAIL_* env vars.")
 
             return {
                 "message": f"Successfully submitted {len(submitted_apps)} applications",

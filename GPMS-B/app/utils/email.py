@@ -342,23 +342,32 @@ async def send_payment_slip_email(
     nature_of_payment: str,
     total_amount: float
 ) -> bool:
-    """Send payment slip details via email"""
+    """Send gatepass/payment slip details via email to applicant after application submission."""
     try:
-        # Get user's email and profile
+        # Get user and optional profile (left join so missing profile doesn't block email)
         query = (
             select(User, Profile)
-            .join(Profile, User.user_id == Profile.user_id)
+            .outerjoin(Profile, User.user_id == Profile.user_id)
             .where(User.user_id == user_id)
         )
         result = await db.execute(query)
-        user, profile = result.one()
+        row = result.one_or_none()
+        if not row:
+            print(f"Gatepass slip email skipped: user_id={user_id} not found.")
+            return False
 
-        full_name = f"{profile.first_name} {profile.last_name}"
-        
+        user, profile = row
+        full_name = f"{profile.first_name} {profile.last_name}" if profile else "Applicant"
+        amount = float(total_amount) if total_amount is not None else 0.0
+
         from_email = os.getenv("EMAIL_ADDRESS")
         from_password = os.getenv("EMAIL_PASSWORD")
         smtp_server = os.getenv("SMTP_SERVER")
         smtp_port = int(os.getenv("SMTP_PORT", 587))
+
+        if not all([from_email, from_password, smtp_server]):
+            print("Gatepass slip email skipped: EMAIL_ADDRESS, EMAIL_PASSWORD, or SMTP_SERVER not set in environment.")
+            return False
 
         msg = MIMEMultipart("alternative")
         msg['From'] = from_email
@@ -484,7 +493,7 @@ async def send_payment_slip_email(
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Amount:</span>
-                            <span class="detail-value amount-value">₱{total_amount:,.2f}</span>
+                            <span class="detail-value amount-value">₱{amount:,.2f}</span>
                         </div>
                     </div>
                     <div class="issuer-section">
@@ -511,9 +520,9 @@ async def send_payment_slip_email(
             server.login(from_email, from_password)
             server.sendmail(from_email, user.email, msg.as_string())
         
-        print(f"Payment slip email sent to {user.email}")
+        print(f"Gatepass slip email sent to {user.email}")
         return True
-        
+
     except Exception as e:
-        print(f"Error sending payment slip email: {str(e)}")
+        print(f"Gatepass slip email failed (user_id={user_id}): {e!r}")
         return False

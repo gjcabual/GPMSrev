@@ -218,7 +218,14 @@ export const ProfileContent = () => {
        <div className="h-[100px] bg-primary rounded-t-lg" />
        <div className="p-4 md:p-6">
         <div className="flex items-start gap-3 md:gap-5 absolute top-10 left-5 md:left-10">
-         <div className="h-[70px] w-[70px] md:h-[90px] md:w-[90px] border-4 border-white rounded-full bg-primary overflow-hidden">
+         <div
+          onClick={() => setIsEditing(true)}
+          className="h-[70px] w-[70px] md:h-[90px] md:w-[90px] border-4 border-white rounded-full bg-primary overflow-hidden cursor-pointer group relative"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && setIsEditing(true)}
+          aria-label="Change profile picture"
+         >
           {profile?.has_image && profile?.image_url ? (
            <ImageDisplay
             key={`profile-image-${
@@ -240,6 +247,9 @@ export const ProfileContent = () => {
             {profile?.last_name?.[0]}
            </div>
           )}
+          <span className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full text-white text-xs font-medium text-center">
+           Change photo
+          </span>
          </div>
          <div className="text-white">
           <h1 className="font-medium text-base md:text-lg">{getFullName()}</h1>
@@ -411,35 +421,44 @@ const EditingProfile = ({
      />
     </div>
 
-    {/* Profile Image Upload */}
+    {/* Profile Image Upload - clickable image slot with hover */}
     <div className="mb-4 flex flex-col items-center">
-     <div className="h-[70px] w-[70px] rounded-full mb-2 overflow-hidden border-2 border-primary">
-      {previewImage ? (
-       <img
-        src={previewImage}
-        alt="Profile Preview"
-        className="h-full w-full object-cover"
-       />
-      ) : profileImage ? (
-       <ImageDisplay
-        key={imageKey}
-        imageUrl={profileImage}
-        alt="Current Profile"
-        className="h-full w-full object-cover"
-        fallback={
-         <div className="h-full w-full bg-primary flex items-center justify-center text-white text-xl font-bold">
-          {formData?.first_name?.[0]}
-          {formData?.last_name?.[0]}
-         </div>
-        }
-       />
-      ) : (
-       <div className="h-full w-full bg-primary flex items-center justify-center text-white text-xl font-bold">
-        {formData?.first_name?.[0]}
-        {formData?.last_name?.[0]}
-       </div>
-      )}
-     </div>
+     <label
+      htmlFor="profile-image"
+      className="relative h-[70px] w-[70px] rounded-full mb-2 overflow-hidden border-2 border-primary cursor-pointer group block"
+     >
+      <div className="h-full w-full">
+       {previewImage ? (
+        <img
+         src={previewImage}
+         alt="Profile Preview"
+         className="h-full w-full object-cover"
+        />
+       ) : profileImage ? (
+        <ImageDisplay
+         key={imageKey}
+         imageUrl={profileImage}
+         alt="Current Profile"
+         className="h-full w-full object-cover"
+         fallback={
+          <div className="h-full w-full bg-primary flex items-center justify-center text-white text-xl font-bold">
+           {formData?.first_name?.[0]}
+           {formData?.last_name?.[0]}
+          </div>
+         }
+        />
+       ) : (
+        <div className="h-full w-full bg-primary flex items-center justify-center text-white text-xl font-bold">
+         {formData?.first_name?.[0]}
+         {formData?.last_name?.[0]}
+        </div>
+       )}
+      </div>
+      {/* Hover overlay - click to change photo */}
+      <span className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full text-white text-[10px] font-medium text-center px-1">
+       Change photo
+      </span>
+     </label>
      <label
       htmlFor="profile-image"
       className="cursor-pointer text-xs text-primary font-medium"

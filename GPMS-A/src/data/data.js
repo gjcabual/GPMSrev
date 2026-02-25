@@ -2,7 +2,7 @@ import { MdDashboard } from "react-icons/md";
 import { MdPeople } from "react-icons/md";
 import { RiPieChart2Fill } from "react-icons/ri";
 import { FaClipboardList } from "react-icons/fa6";
-import { IoMdSettings } from "react-icons/io";
+import { FaUserCircle } from "react-icons/fa";
 
 export const adminData = [
  {
@@ -31,8 +31,8 @@ export const adminData = [
  },
  {
   id: 5,
-  title: "Settings",
-  icon: IoMdSettings,
+  title: "Profile",
+  icon: FaUserCircle,
   link: "/admin/setting",
  },
 ];
@@ -64,8 +64,8 @@ export const staffData = [
  },
  {
   id: 5,
-  title: "Settings",
-  icon: IoMdSettings,
+  title: "Profile",
+  icon: FaUserCircle,
   link: "/staff/setting",
  },
 ];
