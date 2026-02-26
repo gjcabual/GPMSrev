@@ -1,30 +1,183 @@
+import re
 from app.utils.image_ocr_utils import process_image, compare_images
 from app.utils.text_ocr_utils import validate_credentials, compare_text_array, extract_document_reference
 from app.utils.common_utils import get_text_from_file
 from app.utils.date_ocr_utils import extract_dates
 from datetime import datetime
 
+
+def _safe_get_after_colon(line, max_len=200):
+    """Get part after first colon, stripped and truncated. Returns None if missing."""
+    if ":" not in line:
+        return None
+    parts = line.split(":", 1)
+    if len(parts) < 2:
+        return None
+    s = (parts[1] or "").strip()
+    return s[:max_len] if s else None
+
+
+def extract_cr_fields(text):
+    """
+    Extract CR-specific fields from OCR text: owner name, address, engine no., chassis no., plate number,
+    make, year model, body type, piston displacement.
+    Uses keyword-based line parsing; document_date comes from extract_dates (CR upper-right date).
+    Defensive: never raises; returns None for unextracted fields.
+    """
+    out = {
+        "owner_name": None,
+        "owner_address": None,
+        "engine_no": None,
+        "chassis_no": None,
+        "plate_number": None,
+        "make": None,
+        "year_model": None,
+        "body_type": None,
+        "piston_displacement": None,
+    }
+    if not text or not (isinstance(text, str) and text.strip()):
+        return out
+    try:
+        lines = [ln.strip() for ln in text.split("\n") if ln and ln.strip()]
+    except Exception:
+        return out
+    text_lower = text.lower()
+    for i, line in enumerate(lines):
+        try:
+            if not line:
+                continue
+            line_lower = line.lower()
+            # Owner / Registered owner
+            if "owner" in line_lower and "name" not in line_lower:
+                val = _safe_get_after_colon(line, 120) or (out["owner_name"] or "")
+                if val:
+                    out["owner_name"] = val
+                if not out["owner_name"] and i + 1 < len(lines) and len(lines[i + 1]) > 2:
+                    out["owner_name"] = lines[i + 1].strip()[:120]
+            if "owner" in line_lower and "name" in line_lower:
+                val = _safe_get_after_colon(line, 120) or (out["owner_name"] or (lines[i + 1].strip()[:120] if i + 1 < len(lines) else ""))
+                if val:
+                    out["owner_name"] = val
+            # Address
+            if "address" in line_lower:
+                val = _safe_get_after_colon(line, 200) or (lines[i + 1].strip()[:200] if i + 1 < len(lines) else None)
+                if val:
+                    out["owner_address"] = val
+            # Engine no.
+            if "engine" in line_lower and ("no" in line_lower or "number" in line_lower or ":" in line_lower):
+                rest = _safe_get_after_colon(line, 100) or line
+                match = re.search(r"[\w\-]{4,20}", rest)
+                if match and not re.match(r"^\d{4}[-—\s]\d{11}$", (rest or "").strip()):
+                    out["engine_no"] = match.group(0).strip()[:30]
+            # Chassis no.
+            if "chassis" in line_lower:
+                rest = _safe_get_after_colon(line, 50) or line
+                match = re.search(r"[\w\-]{4,25}", rest)
+                if match:
+                    out["chassis_no"] = match.group(0).strip()[:30]
+            # Make
+            if "make" in line_lower and "year" not in line_lower:
+                val = _safe_get_after_colon(line, 50) or (lines[i + 1].strip()[:50] if i + 1 < len(lines) else None)
+                if val:
+                    out["make"] = val
+            # Year model
+            if "year" in line_lower and ("model" in line_lower or re.search(r"20\d{2}|19\d{2}", line)):
+                val = _safe_get_after_colon(line, 20) or (lines[i + 1].strip()[:20] if i + 1 < len(lines) else None)
+                if val:
+                    out["year_model"] = val
+                if not out["year_model"]:
+                    ym = re.search(r"20\d{2}|19\d{2}", line)
+                    if ym:
+                        out["year_model"] = ym.group(0)
+            # Body type
+            if "body" in line_lower and "type" in line_lower:
+                val = _safe_get_after_colon(line, 40) or (lines[i + 1].strip()[:40] if i + 1 < len(lines) else None)
+                if val:
+                    out["body_type"] = val
+            # Piston displacement
+            if "piston" in line_lower or "displacement" in line_lower:
+                val = _safe_get_after_colon(line, 30) or (lines[i + 1].strip()[:30] if i + 1 < len(lines) else None)
+                if val:
+                    out["piston_displacement"] = val
+                if not out["piston_displacement"]:
+                    pd = re.search(r"[\d.]+\s*(?:cc|cm³|l|liter)", line_lower) or re.search(r"[\d.]+\s*cc", line_lower)
+                    if pd:
+                        out["piston_displacement"] = pd.group(0).strip()[:30]
+            # Plate number
+            if "plate" in line_lower or "mv file" in line_lower:
+                rest = _safe_get_after_colon(line, 30) or line
+                plate = re.search(r"[A-Za-z]{2,4}[-]?\s*\d{2,5}", rest) or re.search(r"\d{2,5}[-]?[A-Za-z]{2,4}", rest)
+                if plate:
+                    out["plate_number"] = re.sub(r"\s+", "", plate.group(0))[:15]
+        except Exception:
+            continue
+    # Fallback: plate pattern anywhere
+    if not out["plate_number"]:
+        for line in lines:
+            try:
+                m = re.search(r"\b([A-Za-z]{2,4}[-]?\d{2,5})\b", line)
+                if m:
+                    out["plate_number"] = m.group(1).replace(" ", "")[:15]
+                    break
+            except Exception:
+                continue
+    return out
+
+
 def extract_document_data(uploaded_image_path, doc_type):
     """
-    Run OCR on the uploaded image only (no reference) and return file_number and dates.
-    Use when reference files are missing or for extract-only flow.
-    Returns dict with keys: file_number (OR/CR), dates (expiration_date, etc.) - same shape as compare_credentials result.
+    Run OCR on the uploaded image only (no reference) and return file_number, dates, and for CR extra fields.
+    For CR uses full OCR (both preprocessors) for better results on watermarked documents.
     """
     result = {
         "file_number": None,
-        "dates": {"expiration_date": None, "birth_date": None, "other_dates": []},
+        "dates": {"expiration_date": None, "birth_date": None, "document_date": None, "other_dates": []},
+        "owner_name": None,
+        "owner_address": None,
+        "engine_no": None,
+        "chassis_no": None,
+        "plate_number": None,
+        "make": None,
+        "year_model": None,
+        "body_type": None,
+        "piston_displacement": None,
     }
     try:
-        text_or_path, _ = process_image(uploaded_image_path, save_results=False)
+        # CR often has watermarks; use full OCR (fast=False) for both preprocessors and PSM configs
+        use_fast = doc_type != "CR"
+        text_or_path, _ = process_image(uploaded_image_path, save_results=False, fast=use_fast)
         uploaded_text = (text_or_path or "") if text_or_path is not None else ""
-        if not uploaded_text or not uploaded_text.strip():
+        uploaded_text = (uploaded_text or "").strip()
+        if not uploaded_text:
             return result
         if doc_type in ("OR", "CR"):
-            ref_result = extract_document_reference(uploaded_text, doc_type)
-            if ref_result.get("is_valid"):
-                result["file_number"] = ref_result.get("file_number")
-        dates = extract_dates(uploaded_text, doc_type)
-        result["dates"] = dates
+            try:
+                ref_result = extract_document_reference(uploaded_text, doc_type)
+                if ref_result.get("is_valid"):
+                    result["file_number"] = ref_result.get("file_number")
+            except Exception as e:
+                print(f"extract_document_reference failed: {e}")
+        try:
+            dates = extract_dates(uploaded_text, doc_type)
+            if dates:
+                result["dates"] = dates
+        except Exception as e:
+            print(f"extract_dates failed: {e}")
+        if doc_type == "CR":
+            try:
+                cr = extract_cr_fields(uploaded_text)
+                if cr:
+                    result["owner_name"] = cr.get("owner_name")
+                    result["owner_address"] = cr.get("owner_address")
+                    result["engine_no"] = cr.get("engine_no")
+                    result["chassis_no"] = cr.get("chassis_no")
+                    result["plate_number"] = cr.get("plate_number")
+                    result["make"] = cr.get("make")
+                    result["year_model"] = cr.get("year_model")
+                    result["body_type"] = cr.get("body_type")
+                    result["piston_displacement"] = cr.get("piston_displacement")
+            except Exception as e:
+                print(f"extract_cr_fields failed: {e}")
     except Exception as e:
         print(f"extract_document_data failed: {e}")
     return result

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { IoMdCloudUpload } from "react-icons/io";
 import { VerifyModal } from "../../../components/applicant/VerifyModal";
@@ -42,11 +42,10 @@ export const Application = () => {
   or: null,
   cr: null,
   dl: null,
-  updateValidationErrors: null,
  });
  const [extractedDocDetails, setExtractedDocDetails] = useState({
   OR: { file_number: "", expiration_date: "" },
-  CR: { file_number: "" },
+  CR: { file_number: "", date: "", owner_name: "", owner_address: "", engine_no: "", chassis_no: "", plate_number: "", make: "", year_model: "", body_type: "", piston_displacement: "" },
   DL: { expiration_date: "" },
  });
  const [confirmedDocDetails, setConfirmedDocDetails] = useState({
@@ -54,6 +53,17 @@ export const Application = () => {
   cr_file_number: "",
   or_expiration: "",
   dl_expiration: "",
+  cr_date: "",
+  cr_owner_name: "",
+  cr_owner_address: "",
+  cr_engine_no: "",
+  cr_chassis_no: "",
+  cr_plate_number: "",
+  cr_plate_number_blank_or_temp: false,
+  cr_make: "",
+  cr_year_model: "",
+  cr_body_type: "",
+  cr_piston_displacement: "",
  });
  const [detailsConfirmed, setDetailsConfirmed] = useState(false);
  const [isExtracting, setIsExtracting] = useState(false);
@@ -127,6 +137,8 @@ export const Application = () => {
       setDocumentFiles={setDocumentFilesRef}
       documentFiles={documentFilesRef}
       setHasApiError={setHasApiError}
+      setExtractedDocDetails={setExtractedDocDetails}
+      setConfirmedDocDetails={setConfirmedDocDetails}
      />
     );
    case 4:
@@ -237,40 +249,14 @@ export const Application = () => {
 
    const applicationData = await applicationResponse.json();
 
-   // Handle 422 status specifically for validation errors
-   if (applicationResponse.status === 422) {
-    const validationErrors = applicationData.detail?.validation_errors;
-
-    // Check for document match validation
-    if (applicationData.detail?.document_match === false) {
-     const hint = applicationData.detail?.match_hint;
-     const orNum = applicationData.detail?.or_file_number;
-     const crNum = applicationData.detail?.cr_file_number;
-     let msg = hint || "The file numbers on your OR and CR documents don't match.";
-     if (orNum != null || crNum != null) {
-      msg += ` Extracted: OR=${orNum ?? "—"}, CR=${crNum ?? "—"}`;
-     }
-     toast.error(msg, { duration: 6000 });
-
-     // Still update validation errors for display
-     if (validationErrors && documentFilesRef.updateValidationErrors) {
-      // Add document_match: false to the validation errors
-      documentFilesRef.updateValidationErrors(validationErrors, false);
-     }
-
-     setStatus("error");
-     return;
-    }
-
-    // Handle other validation errors
-    if (validationErrors && documentFilesRef.updateValidationErrors) {
-     documentFilesRef.updateValidationErrors(validationErrors, true);
-     setStatus("error");
-     return;
-    }
+   if (applicationResponse.status === 400) {
+    const msg = typeof applicationData.detail === "string" ? applicationData.detail : applicationData.detail?.message || "Please check your input and try again.";
+    toast.error(msg, { duration: 5000 });
+    setStatus("error");
+    setHasApiError(true);
+    return;
    }
 
-   // Handle other error responses
    if (!applicationResponse.ok) {
     setHasApiError(true);
     setStatus("error");
@@ -525,59 +511,11 @@ export const Application = () => {
     setIsRequestingOTP(false);
    }
   } else if (currentStep === 3) {
-   // Documents step: call extract API then go to confirm step
-   if (!documentFilesRef.or || !documentFilesRef.cr || !documentFilesRef.dl) {
-    toast.error("Please upload all required documents (OR, CR, DL) before proceeding.");
+   if (!documentFilesRef?.or || !documentFilesRef?.cr || !documentFilesRef?.dl) {
+    toast.error("Please upload and confirm all required documents (CR, OR, DL) before proceeding.");
     return;
    }
-   try {
-    setIsExtracting(true);
-    setHasApiError(false);
-    const formData = new FormData();
-    formData.append("doc_types", "OR,CR,DL");
-    formData.append("doc_files", documentFilesRef.or);
-    formData.append("doc_files", documentFilesRef.cr);
-    formData.append("doc_files", documentFilesRef.dl);
-    if (vehicleData?.plate_no) formData.append("plate_no", vehicleData.plate_no);
-
-    const res = await fetch(buildUrl("/applicant/application/extract"), {
-     method: "POST",
-     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-     body: formData,
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-     setHasApiError(true);
-     toast.error(data.detail || "Failed to extract document details.");
-     return;
-    }
-
-    const orFile = data?.OR?.file_number ?? "";
-    const orExp = data?.OR?.expiration_date ?? "";
-    const crFile = data?.CR?.file_number ?? "";
-    const dlExp = data?.DL?.expiration_date ?? "";
-
-    setExtractedDocDetails({
-     OR: { file_number: orFile, expiration_date: orExp },
-     CR: { file_number: crFile },
-     DL: { expiration_date: dlExp },
-    });
-    setConfirmedDocDetails({
-     or_file_number: orFile,
-     cr_file_number: crFile,
-     or_expiration: orExp,
-     dl_expiration: dlExp,
-    });
-    setDetailsConfirmed(false);
-    setCurrentStep(4);
-   } catch (err) {
-    console.error(err);
-    toast.error("Failed to extract document details. Please try again.");
-    setHasApiError(true);
-   } finally {
-    setIsExtracting(false);
-   }
+   setCurrentStep(4);
   } else {
    setCurrentStep((prev) => prev + 1);
   }
@@ -670,6 +608,7 @@ export const Application = () => {
          onClick={handleNextStep}
          disabled={
           (currentStep === 0 && !agreedToTerms) ||
+          (currentStep === 3 && (!documentFilesRef?.or || !documentFilesRef?.cr || !documentFilesRef?.dl)) ||
           ((isRequestingOTP || isExtracting) && !hasApiError)
          }
         >
@@ -1934,249 +1873,252 @@ const Step3 = ({
  );
 };
 
-const Step4 = ({ setDocumentFiles, documentFiles, setHasApiError }) => {
- const [files, setFiles] = useState({
-  or: null,
-  cr: null,
-  dl: null,
- });
- const [fileError, setFileError] = useState(false);
- const [validationErrors, setValidationErrors] = useState({
-  or: null,
-  cr: null,
-  dl: null,
- });
+const DOC_ORDER = ["CR", "OR", "DL"];
+const DOC_LABELS = { CR: "Certificate of Registration", OR: "Official Receipt", DL: "Driver's License" };
 
- // Update parent component when fileError changes
+const Step4 = ({
+ setDocumentFiles,
+ documentFiles,
+ setHasApiError,
+ setExtractedDocDetails,
+ setConfirmedDocDetails,
+}) => {
+ const [currentDocIndex, setCurrentDocIndex] = useState(0);
+ const [showDocModal, setShowDocModal] = useState(false);
+ const [modalFile, setModalFile] = useState(null);
+ const [modalDocType, setModalDocType] = useState(null);
+ const [modalForm, setModalForm] = useState({
+  file_number: "",
+  expiration_date: "",
+  date: "",
+  owner_name: "",
+  owner_address: "",
+  engine_no: "",
+  chassis_no: "",
+  plate_number: "",
+  plate_number_blank_or_temp: false,
+  make: "",
+  year_model: "",
+  body_type: "",
+  piston_displacement: "",
+ });
+ const [isExtractingOne, setIsExtractingOne] = useState(false);
+ const [fileError, setFileError] = useState(false);
+ const [docZoom, setDocZoom] = useState(100);
+ const [showDocFullscreen, setShowDocFullscreen] = useState(false);
+const fileInputRef = useRef(null);
+  const extractedPayloadRef = useRef(null);
+  const [pendingExtractedData, setPendingExtractedData] = useState(null);
+
+ const MIN_ZOOM = 50;
+ const MAX_ZOOM = 200;
+ const ZOOM_STEP = 25;
+ const handleDocZoomIn = () => setDocZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP));
+ const handleDocZoomOut = () => setDocZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP));
+ const handleDocZoomReset = () => setDocZoom(100);
+
  useEffect(() => {
   setHasApiError(fileError);
  }, [fileError, setHasApiError]);
 
- // Function to update validation errors
- const updateValidationErrors = useCallback((errors, docsMatch = true) => {
-  if (errors) {
-   const formattedErrors = {};
-   errors.forEach((error) => {
-    formattedErrors[error.type.toLowerCase()] = {
-     valid: error.valid,
-     errors: error.errors,
-     message: error.errors.message,
-     fileNumber: error.errors.file_number,
-    };
-   });
-
-   // Store document match status
-   formattedErrors.docsMatch = docsMatch;
-
-   setValidationErrors(formattedErrors);
-  } else {
-   setValidationErrors({
-    or: null,
-    cr: null,
-    dl: null,
-    docsMatch: true,
-   });
-  }
- }, []);
-
- // Pass the updateValidationErrors function to parent
  useEffect(() => {
-  if (typeof setDocumentFiles === "function") {
-   setDocumentFiles((prev) => ({
+  if (!showDocModal || !pendingExtractedData) return;
+  const raw = pendingExtractedData;
+  const data = raw.payload || raw;
+  const docType = raw._docType;
+  const toStr = (v) => (v != null && v !== "" ? String(v).trim() : "");
+  if (docType === "CR") {
+   setModalForm({
+    file_number: toStr(data.file_number),
+    expiration_date: "",
+    date: toStr(data.date),
+    owner_name: toStr(data.owner_name),
+    owner_address: toStr(data.owner_address),
+    engine_no: toStr(data.engine_no),
+    chassis_no: toStr(data.chassis_no),
+    plate_number: toStr(data.plate_number),
+    plate_number_blank_or_temp: false,
+    make: toStr(data.make),
+    year_model: toStr(data.year_model),
+    body_type: toStr(data.body_type),
+    piston_displacement: toStr(data.piston_displacement),
+   });
+  } else if (docType === "OR" || docType === "DL") {
+   setModalForm((prev) => ({
     ...prev,
-    or: files.or,
-    cr: files.cr,
-    dl: files.dl,
-    updateValidationErrors,
+    file_number: toStr(data.file_number),
+    expiration_date: toStr(data.expiration_date),
    }));
   }
- }, [files, updateValidationErrors, setDocumentFiles]);
+ }, [showDocModal, pendingExtractedData]);
 
- const handleFileChange = (type, event) => {
-  try {
-   const file = event.target.files[0];
-   if (file) {
-    if (file.size > 10 * 1024 * 1024) {
-     toast.error(`File ${file.name} is too large. Maximum size is 10MB.`);
-     setFileError(true);
-     return;
-    }
+ const currentDocType = DOC_ORDER[currentDocIndex];
+ const currentLabel = DOC_LABELS[currentDocType];
 
-    // Clear validation error for this specific document type
-    setValidationErrors((prev) => ({
-     ...prev,
-     [type]: null,
-    }));
-
-    const updatedFiles = { ...files, [type]: file };
-    setFiles(updatedFiles);
-   }
-  } catch (error) {
-   console.error("Error handling file:", error);
-   toast.error("Failed to process file. Please try a different file.");
+ const handleFileChange = async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) {
+   toast.error("File is too large. Maximum size is 10MB.");
    setFileError(true);
+   return;
+  }
+  setFileError(false);
+  setIsExtractingOne(true);
+  try {
+   const formData = new FormData();
+   formData.append("doc_type", currentDocType);
+   formData.append("doc_file", file);
+   const res = await fetch(buildUrl("/applicant/application/extract-one"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+    body: formData,
+   });
+   let data = await res.json();
+   if (!res.ok) {
+    toast.error(data.detail || "Failed to extract document details.");
+    setHasApiError(true);
+    return;
+   }
+   if (data && typeof data === "object" && data.data != null && !("file_number" in data) && !("owner_name" in data)) {
+    data = data.data;
+   }
+   const docType = currentDocType;
+   const toStr = (v) => (v != null && v !== "" ? String(v).trim() : "");
+   const payload = {
+    _docType: docType,
+    file_number: data.file_number,
+    expiration_date: data.expiration_date,
+    date: data.date,
+    owner_name: data.owner_name,
+    owner_address: data.owner_address,
+    engine_no: data.engine_no,
+    chassis_no: data.chassis_no,
+    plate_number: data.plate_number,
+    make: data.make,
+    year_model: data.year_model,
+    body_type: data.body_type,
+    piston_displacement: data.piston_displacement,
+   };
+   setModalFile(file);
+   setModalDocType(docType);
+   extractedPayloadRef.current = payload;
+   setPendingExtractedData({ ...payload, payload: payload });
+   setDocZoom(100);
+   setShowDocFullscreen(false);
+   setShowDocModal(true);
+   setTimeout(() => {
+    setModalForm((prev) => {
+     if (docType === "CR") {
+      return {
+       file_number: toStr(payload.file_number),
+       expiration_date: "",
+       date: toStr(payload.date),
+       owner_name: toStr(payload.owner_name),
+       owner_address: toStr(payload.owner_address),
+       engine_no: toStr(payload.engine_no),
+       chassis_no: toStr(payload.chassis_no),
+       plate_number: toStr(payload.plate_number),
+       plate_number_blank_or_temp: false,
+       make: toStr(payload.make),
+       year_model: toStr(payload.year_model),
+       body_type: toStr(payload.body_type),
+       piston_displacement: toStr(payload.piston_displacement),
+      };
+     }
+     return {
+      ...prev,
+      file_number: toStr(payload.file_number),
+      expiration_date: toStr(payload.expiration_date),
+     };
+    });
+   }, 0);
+  } catch (err) {
+   console.error(err);
+   toast.error("Failed to extract document details. Please try again.");
+   setHasApiError(true);
+  } finally {
+   setIsExtractingOne(false);
+   if (fileInputRef.current) fileInputRef.current.value = "";
   }
  };
 
- // Calculate how many required documents are missing
- const getMissingDocuments = () => {
-  const missing = [];
-  if (!files.or) missing.push("Official Receipt");
-  if (!files.cr) missing.push("Certificate of Registration");
-  if (!files.dl) missing.push("Driver's License");
-  return missing;
+ const handleProceed = () => {
+  const doc = modalDocType;
+  const lower = doc.toLowerCase();
+  const pd = extractedPayloadRef.current || pendingExtractedData?.payload || pendingExtractedData;
+  const effective = (key) => {
+   const m = modalForm[key];
+   if (m != null && String(m).trim() !== "") return String(m).trim();
+   const p = pd && pd[key];
+   return p != null && p !== "" ? String(p).trim() : "";
+  };
+
+  setExtractedDocDetails((prev) => ({
+   ...prev,
+   [doc]: doc === "CR"
+    ? {
+      file_number: effective("file_number") || prev.CR?.file_number,
+      date: effective("date") || prev.CR?.date,
+      owner_name: effective("owner_name") || prev.CR?.owner_name,
+      owner_address: effective("owner_address") || prev.CR?.owner_address,
+      engine_no: effective("engine_no") || prev.CR?.engine_no,
+      chassis_no: effective("chassis_no") || prev.CR?.chassis_no,
+      plate_number: effective("plate_number") || prev.CR?.plate_number,
+      make: effective("make") || prev.CR?.make,
+      year_model: effective("year_model") || prev.CR?.year_model,
+      body_type: effective("body_type") || prev.CR?.body_type,
+      piston_displacement: effective("piston_displacement") || prev.CR?.piston_displacement,
+     }
+    : {
+      file_number: doc !== "DL" ? (effective("file_number") || prev[doc]?.file_number) : prev[doc]?.file_number,
+      expiration_date: (effective("expiration_date") || prev[doc]?.expiration_date) ?? "",
+     },
+  }));
+  setConfirmedDocDetails((prev) => ({
+   ...prev,
+   ...(doc === "CR" && {
+    cr_file_number: effective("file_number") || prev.cr_file_number,
+    cr_date: effective("date") || prev.cr_date,
+    cr_owner_name: effective("owner_name") || prev.cr_owner_name,
+    cr_owner_address: effective("owner_address") || prev.cr_owner_address,
+    cr_engine_no: effective("engine_no") || prev.cr_engine_no,
+    cr_chassis_no: effective("chassis_no") || prev.cr_chassis_no,
+    cr_plate_number: modalForm.plate_number_blank_or_temp ? "" : (effective("plate_number") || prev.cr_plate_number),
+    cr_plate_number_blank_or_temp: modalForm.plate_number_blank_or_temp ?? prev.cr_plate_number_blank_or_temp,
+    cr_make: effective("make") || prev.cr_make,
+    cr_year_model: effective("year_model") || prev.cr_year_model,
+    cr_body_type: effective("body_type") || prev.cr_body_type,
+    cr_piston_displacement: effective("piston_displacement") || prev.cr_piston_displacement,
+   }),
+   ...(doc === "OR" && {
+    or_file_number: effective("file_number") || prev.or_file_number,
+    or_expiration: effective("expiration_date") || prev.or_expiration,
+   }),
+   ...(doc === "DL" && { dl_expiration: effective("expiration_date") || prev.dl_expiration }),
+  }));
+  setDocumentFiles((prev) => ({ ...prev, [lower]: modalFile }));
+  setShowDocFullscreen(false);
+  setShowDocModal(false);
+  setModalFile(null);
+  setModalDocType(null);
+  extractedPayloadRef.current = null;
+  setPendingExtractedData(null);
+  setModalForm({
+   file_number: "", expiration_date: "", date: "", owner_name: "", owner_address: "",
+   engine_no: "", chassis_no: "", plate_number: "", plate_number_blank_or_temp: false,
+   make: "", year_model: "", body_type: "", piston_displacement: "",
+  });
+  setCurrentDocIndex((i) => i + 1);
  };
 
- const missingDocs = getMissingDocuments();
-
- const DocumentUploadSection = ({ type, label }) => {
-  const lowerType = type.toLowerCase();
-  const validationError = validationErrors[lowerType];
-  const docsMatch = validationErrors.docsMatch !== false; // Default to true if undefined
-  const file = files[lowerType];
-
-  // Special handling for OR and CR when there's a file number mismatch
-  const showMismatchError =
-   !docsMatch &&
-   (lowerType === "or" || lowerType === "cr") &&
-   validationError?.valid;
-
-  return (
-   <div className="flex flex-col items-center">
-    <label htmlFor={`${type}-upload`} className="cursor-pointer">
-     <div
-      className={`w-[200px] h-[170px] p-2 border ${
-       file
-        ? showMismatchError
-          ? "border-red-500" // Red for OR/CR when file numbers don't match
-          : validationError
-          ? validationError.valid
-            ? "border-green-500"
-            : "border-red-500"
-          : "border-green-500"
-        : "border-dashed border-gray-500"
-      } rounded-md bg-gray-100 flex items-center flex-col justify-center text-center`}
-     >
-      {file ? (
-       <div className="flex flex-col items-center">
-        <div
-         className={`font-medium ${
-          showMismatchError
-           ? "text-red-600" // Red text for OR/CR when file numbers don't match
-           : validationError
-           ? validationError.valid
-             ? "text-green-600"
-             : "text-red-600"
-           : "text-green-600"
-         }`}
-        >
-         {showMismatchError
-          ? "File Number Mismatch"
-          : validationError
-          ? validationError.valid
-            ? "Document Valid ✓"
-            : "Validation Failed"
-          : "File selected ✓"}
-        </div>
-        <span className="text-xs text-gray-500 mt-2 cursor-pointer hover:underline">
-         upload again here
-        </span>
-       </div>
-      ) : (
-       // ...existing upload UI code...
-       <>
-        <IoMdCloudUpload size={40} className="text-gray-500" />
-        <p className="text-xs font-light text-gray-400">
-         Click to upload or drag and drop your {type} picture
-        </p>
-        <p className="text-xs font-light text-gray-400 pt-1">
-         PNG or JPG (Min 1080 x 720){" "}
-        </p>
-       </>
-      )}
-     </div>
-     <input
-      id={`${type}-upload`}
-      type="file"
-      className="hidden"
-      accept="image/*"
-      onChange={(e) => handleFileChange(lowerType, e)}
-     />
-    </label>
-
-    {/* Show validation message */}
-    {validationError && (
-     <div
-      className={`mt-3 mb-2 p-2 ${
-       showMismatchError
-        ? "bg-red-50 border-red-200"
-        : validationError.valid
-        ? "bg-green-50 border-green-200"
-        : "bg-red-50 border-red-200"
-      } border rounded-md w-full`}
-     >
-      <p
-       className={`text-xs text-center ${
-        showMismatchError
-         ? "text-red-600"
-         : validationError.valid
-         ? "text-green-600"
-         : "text-red-600"
-       }`}
-      >
-       {showMismatchError
-        ? `File number: ${validationError.fileNumber || "Unknown"}`
-        : validationError.message}
-      </p>
-
-      {/* Show additional error details for validation failures */}
-      {!validationError.valid && validationError.errors && (
-       // ...existing error details...
-       <ul className="text-xs text-red-500 mt-1 list-disc list-inside">
-        {validationError.errors.image && <li>Invalid image format</li>}
-        {validationError.errors.text && <li>Document text not readable</li>}
-        {validationError.errors.expiration && (
-         <li>Document expiration invalid</li>
-        )}
-       </ul>
-      )}
-     </div>
-    )}
-
-    <h1
-     className={`text-center ${
-      showMismatchError
-       ? "text-red-500"
-       : file
-       ? validationError
-         ? validationError.valid
-           ? "text-green-600"
-           : "text-red-500"
-         : "text-green-600"
-       : "text-red-500"
-     } text-sm pt-4`}
-    >
-     {type === "OR"
-      ? "Official Receipt"
-      : type === "CR"
-      ? "Certificate of Registration"
-      : type === "DL"
-      ? "Driver's License"
-      : type}{" "}
-     Picture{" "}
-     {file
-      ? showMismatchError
-        ? "File numbers don't match ✗"
-        : validationError
-        ? validationError.valid
-          ? "✓"
-          : "✗"
-        : "✓"
-      : "(Required)"}
-    </h1>
-   </div>
-  );
+ const proceedButtonLabel = () => {
+  if (modalDocType === "CR") return "Proceed to Official Receipt";
+  if (modalDocType === "OR") return "Proceed to Driver's License";
+  return "Proceed";
  };
+
+ const allDone = currentDocIndex >= DOC_ORDER.length;
 
  return (
   <>
@@ -2187,48 +2129,353 @@ const Step4 = ({ setDocumentFiles, documentFiles, setHasApiError }) => {
       Upload a proof of your identity
      </h1>
      <p className="pt-3 text-sm font-light text-gray-500 text-center">
-      Ensure that the image you upload includes the entire document without any
-      parts being cut off. Please upload your Official Receipt, Certificate of
-      Registration, and Driver's License.
+      Upload documents one at a time. Start with Certificate of Registration, then Official Receipt, then Driver&apos;s License.
      </p>
-     <div className="mt-5 flex flex-col md:flex-row gap-3 md:gap-10 w-full items-center justify-center">
-      <DocumentUploadSection type="OR" label="Official Receipt" />
-      <DocumentUploadSection type="CR" label="Certificate of Registration" />
-      <DocumentUploadSection type="DL" label="Driver's License" />
-     </div>
 
-     {missingDocs.length > 0 && (
-      <div className="mt-8 text-center">
-       <p className="text-red-500 font-regular">
-        Please upload the required documents: {missingDocs.join(", ")}
+     {!allDone && (
+      <div className="mt-5 flex flex-col items-center justify-center">
+       <p className="text-sm text-gray-600 mb-3">
+        Step {currentDocIndex + 1} of 3: Upload your <strong>{currentLabel}</strong>
        </p>
+       <label className="cursor-pointer">
+        <div className="w-[200px] h-[170px] p-2 border border-dashed border-gray-500 rounded-md bg-gray-100 flex flex-col items-center justify-center text-center hover:border-primary transition-colors">
+         {isExtractingOne ? (
+          <div className="flex flex-col items-center gap-2">
+           <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+           <span className="text-sm text-gray-600">Extracting...</span>
+          </div>
+         ) : (
+          <>
+           <IoMdCloudUpload size={40} className="text-gray-500" />
+           <p className="text-xs font-light text-gray-400 mt-2">
+            Click to upload your {currentLabel}
+           </p>
+           <p className="text-xs font-light text-gray-400 pt-1">PNG or JPG (Min 1080 x 720)</p>
+          </>
+         )}
+        </div>
+        <input
+         ref={fileInputRef}
+         type="file"
+         className="hidden"
+         accept="image/*"
+         onChange={handleFileChange}
+         disabled={isExtractingOne}
+        />
+       </label>
       </div>
      )}
-     {validationErrors && (
-      <div className="mt-5">
-       {validationErrors.docsMatch === false ? (
-        <div className="h-auto py-2 flex items-center rounded-md px-4 text-xs border border-red-200 bg-red-50 text-red-700">
-         <span className="font-bold">⚠ </span>&nbsp;The file numbers on your OR
-         and CR documents don't match. Please make sure to upload documents with
-         matching file numbers.
-        </div>
-       ) : Object.values(validationErrors).some(
-          (err) => err && !err.valid && err !== validationErrors.docsMatch
-         ) ? (
-        <div className="h-auto py-2 flex items-center rounded-md px-4 text-xs border border-red-200 bg-red-50 text-red-700">
-         <span className="font-bold">! </span>&nbsp;Please check your documents
-         for errors
-        </div>
-       ) : (
-        <div className="h-auto py-2 flex items-center rounded-md px-4 text-xs border border-yellow-200 bg-yellow-50 text-yellow-700">
-         <span className="font-bold">! </span>&nbsp;Please ensure your OR and CR
-         have matching file numbers
-        </div>
-       )}
+
+     {allDone && (
+      <div className="mt-5 text-center text-green-600 font-medium">
+       All documents uploaded. Click Next to confirm details.
       </div>
      )}
     </div>
    </div>
+
+   {showDocModal && modalFile && (
+    <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+     <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-auto shadow-xl">
+      <div className="p-4 border-b flex justify-between items-center">
+       <h2 className="text-lg font-bold text-primary">
+        Confirm {DOC_LABELS[modalDocType]} details
+       </h2>
+       <button
+        type="button"
+        onClick={() => {
+         setShowDocFullscreen(false);
+         setShowDocModal(false);
+         setModalFile(null);
+         setModalDocType(null);
+         extractedPayloadRef.current = null;
+         setPendingExtractedData(null);
+        }}
+        className="text-gray-500 hover:text-gray-700 p-1"
+        aria-label="Close"
+       >
+        <IoClose size={24} />
+       </button>
+      </div>
+      <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+       <div className="flex flex-col items-center">
+        <p className="text-sm font-medium text-gray-700 mb-2">Uploaded document</p>
+        <div className="flex items-center gap-2 mb-2">
+         <button
+          type="button"
+          onClick={handleDocZoomOut}
+          disabled={docZoom <= MIN_ZOOM}
+          className="h-8 w-8 rounded border border-gray-300 bg-white text-gray-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          aria-label="Zoom out"
+         >
+          −
+         </button>
+         <span className="text-sm text-gray-600 min-w-[4rem] text-center">{docZoom}%</span>
+         <button
+          type="button"
+          onClick={handleDocZoomIn}
+          disabled={docZoom >= MAX_ZOOM}
+          className="h-8 w-8 rounded border border-gray-300 bg-white text-gray-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          aria-label="Zoom in"
+         >
+          +
+         </button>
+         {docZoom !== 100 && (
+          <button
+           type="button"
+           onClick={handleDocZoomReset}
+           className="text-xs text-primary hover:underline"
+          >
+           Reset
+          </button>
+         )}
+        </div>
+        <div className="overflow-auto max-h-[400px] w-full flex items-center justify-center border rounded bg-gray-100">
+         <div
+          className="cursor-zoom-in inline-flex items-center justify-center p-2"
+          onClick={() => setShowDocFullscreen(true)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && setShowDocFullscreen(true)}
+          aria-label="Open document in fullscreen"
+         >
+          <img
+           src={URL.createObjectURL(modalFile)}
+           alt={DOC_LABELS[modalDocType]}
+           className="max-h-[360px] w-auto border rounded object-contain select-none"
+           style={{ transform: `scale(${docZoom / 100})`, transformOrigin: "center center" }}
+           draggable={false}
+          />
+         </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-1">Click image for fullscreen</p>
+       </div>
+       <div className="flex flex-col gap-4">
+        <p className="text-sm font-medium text-gray-700">Extracted information (edit if needed)</p>
+        {(() => {
+         const pd = extractedPayloadRef.current || pendingExtractedData?.payload || pendingExtractedData;
+         const f = (key) => {
+          const v = modalForm[key];
+          if (v != null && String(v).trim() !== "") return String(v).trim();
+          const p = pd && pd[key];
+          return p != null && p !== "" ? String(p).trim() : "";
+         };
+         return (
+          <>
+        {(modalDocType === "CR" || modalDocType === "OR") && (
+         <div>
+          <label className="block text-sm text-gray-600 mb-1">
+           {modalDocType === "CR" ? "MV file number" : "File number"}
+          </label>
+          <input
+           type="text"
+            value={f("file_number")}
+           onChange={(e) => setModalForm((prev) => ({ ...prev, file_number: e.target.value }))}
+           className="w-full px-3 py-2 border border-gray-300 rounded-md"
+           placeholder={modalDocType === "CR" ? "e.g. 1501-00000342937" : "e.g. 150100000342937"}
+          />
+         </div>
+        )}
+        {modalDocType === "CR" && (
+         <>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Date (CR upper right)</label>
+           <input
+            type="text"
+            value={f("date")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, date: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="e.g. YYYY/MM/DD"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Owner&apos;s name</label>
+           <input
+            type="text"
+            value={f("owner_name")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, owner_name: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="From CR"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Owner&apos;s address</label>
+           <input
+            type="text"
+            value={f("owner_address")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, owner_address: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="From CR"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Engine no.</label>
+           <input
+            type="text"
+            value={f("engine_no")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, engine_no: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="From CR"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Chassis no.</label>
+           <input
+            type="text"
+            value={f("chassis_no")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, chassis_no: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="From CR"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Make</label>
+           <input
+            type="text"
+            value={f("make")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, make: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="e.g. Honda, Yamaha"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Year model</label>
+           <input
+            type="text"
+            value={f("year_model")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, year_model: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="e.g. 2023"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Body type</label>
+           <input
+            type="text"
+            value={f("body_type")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, body_type: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="e.g. Sedan, Motorcycle"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Piston displacement</label>
+           <input
+            type="text"
+            value={f("piston_displacement")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, piston_displacement: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="e.g. 150cc, 1.5L"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Plate number</label>
+           <input
+            type="text"
+            value={f("plate_number")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, plate_number: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="Leave blank if not on CR"
+            disabled={modalForm.plate_number_blank_or_temp}
+           />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+           <input
+            type="checkbox"
+            checked={modalForm.plate_number_blank_or_temp}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, plate_number_blank_or_temp: e.target.checked }))}
+            className="w-4 h-4 rounded border-gray-300"
+           />
+           <span className="text-sm text-gray-600">Plate number on CR is blank or temporary</span>
+          </label>
+         </>
+        )}
+        {(modalDocType === "OR" || modalDocType === "DL") && (
+         <div>
+          <label className="block text-sm text-gray-600 mb-1">Expiration date</label>
+          <input
+           type="text"
+           value={f("expiration_date")}
+           onChange={(e) => setModalForm((prev) => ({ ...prev, expiration_date: e.target.value }))}
+           className="w-full px-3 py-2 border border-gray-300 rounded-md"
+           placeholder={modalDocType === "OR" ? "MM/YYYY" : "YYYY/MM/DD"}
+          />
+         </div>
+        )}
+        <button
+         type="button"
+         onClick={handleProceed}
+         className="mt-2 bg-primary text-white font-medium py-2 px-4 rounded-md hover:opacity-90"
+        >
+         {proceedButtonLabel()}
+        </button>
+          </>
+         );
+        })()}
+       </div>
+      </div>
+     </div>
+    </div>
+   )}
+
+   {showDocFullscreen && modalFile && (
+    <div
+     className="fixed inset-0 bg-black/90 flex flex-col z-[60]"
+     onClick={(e) => e.target === e.currentTarget && setShowDocFullscreen(false)}
+     role="dialog"
+     aria-modal="true"
+     aria-label="Document fullscreen view"
+    >
+     <div className="flex items-center justify-between p-3 bg-black/50">
+      <div className="flex items-center gap-2">
+       <button
+        type="button"
+        onClick={handleDocZoomOut}
+        disabled={docZoom <= MIN_ZOOM}
+        className="h-9 w-9 rounded bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20"
+        aria-label="Zoom out"
+       >
+        −
+       </button>
+       <span className="text-white text-sm min-w-[4rem] text-center">{docZoom}%</span>
+       <button
+        type="button"
+        onClick={handleDocZoomIn}
+        disabled={docZoom >= MAX_ZOOM}
+        className="h-9 w-9 rounded bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20"
+        aria-label="Zoom in"
+       >
+        +
+       </button>
+       <button
+        type="button"
+        onClick={handleDocZoomReset}
+        className="text-sm text-white/80 hover:text-white px-2"
+       >
+        Reset
+       </button>
+      </div>
+      <button
+       type="button"
+       onClick={() => setShowDocFullscreen(false)}
+       className="h-9 w-9 rounded bg-white/10 text-white hover:bg-white/20 flex items-center justify-center"
+       aria-label="Close fullscreen"
+      >
+       <IoClose size={24} />
+      </button>
+     </div>
+     <div className="flex-1 overflow-auto flex items-center justify-center p-4 min-h-0">
+      <img
+       src={URL.createObjectURL(modalFile)}
+       alt={DOC_LABELS[modalDocType]}
+       className="max-w-full max-h-full w-auto object-contain select-none"
+       style={{ transform: `scale(${docZoom / 100})`, transformOrigin: "center center" }}
+       draggable={false}
+       onClick={(e) => e.stopPropagation()}
+      />
+     </div>
+    </div>
+   )}
   </>
  );
 };

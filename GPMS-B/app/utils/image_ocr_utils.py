@@ -73,14 +73,15 @@ def _preprocess_grayscale(img):
     return cv2.bilateralFilter(enhanced, 5, 50, 50)
 
 
-def process_image(image_path, save_results=True):
+def process_image(image_path, save_results=True, fast=False):
     """
     Process an image using OCR, optionally save the text and create annotated image.
-    
+
     Args:
         image_path (str): Path to the image file
         save_results (bool): Whether to save OCR text and annotated image
-    
+        fast (bool): If True, use single preprocessor and PSM for quicker extraction (when save_results=False).
+
     Returns:
         tuple: (text_output_path, annotated_image_path) or (extracted_text, None)
     """
@@ -98,8 +99,9 @@ def process_image(image_path, save_results=True):
         os.makedirs(output_dir)
     ocr_debug = os.getenv("OCR_DEBUG", "0") == "1"
 
-    # Try adaptive threshold first, then grayscale fallback if little text (better for watermarked docs like CR)
     preprocessors = [("adaptive", _preprocess_for_ocr), ("grayscale", _preprocess_grayscale)]
+    if fast and not save_results:
+        preprocessors = preprocessors[:1]
     text = ""
     img_for_ocr = None
     pil_img = None
@@ -116,6 +118,8 @@ def process_image(image_path, save_results=True):
                 print(f"[OCR_DEBUG] Saved preprocessed ({preproc_name}): {preprocess_path}")
 
             psm_configs = [("--oem 3 --psm 6", "6"), ("--oem 3 --psm 3", "3")]
+            if fast and not save_results:
+                psm_configs = psm_configs[:1]
             for config, psm_label in psm_configs:
                 try:
                     t = pytesseract.image_to_string(pil_img, config=config)
@@ -127,9 +131,13 @@ def process_image(image_path, save_results=True):
                     print(f"[OCR_DEBUG] {preproc_name} PSM {psm_label} extracted {len(t)} chars, {usable_len} usable")
                 if len(t.strip()) > len(text.strip()) or (len(text.strip()) < 50 and len(t.strip()) >= len(text.strip())):
                     text = t
+                    if fast and not save_results and usable_len >= 80:
+                        break
                     if usable_len >= 100:
                         break
             if pil_img is not None and len(text.strip()) >= 100:
+                break
+            if fast and not save_results and len(text.strip()) >= 80:
                 break
     except pytesseract.TesseractNotFoundError:
         print("Error: Tesseract not found. Install it and add to PATH, or set TESSERACT_CMD in .env")
