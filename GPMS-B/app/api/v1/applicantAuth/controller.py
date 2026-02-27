@@ -92,35 +92,7 @@ class UserController:
                     detail="User not found"
                 )
             
-            # Debug: Get the token directly
-            from app.db.models.token import Token
-            from sqlalchemy import and_
-            
-            debug_query = select(Token).where(
-                and_(
-                    Token.user_id == user.user_id,
-                    Token.token_type == "verification"
-                )
-            ).order_by(Token.created_at.desc())
-            
-            debug_result = await db.execute(debug_query)
-            debug_token = debug_result.scalar_one_or_none()
-            
-            print("==== DEBUG INFO ====")
-            print(f"Current time: {datetime.now()}")
-            print(f"Provided OTP: {otp}")
-            
-            if debug_token:
-                print(f"Token in DB: {debug_token.token}")
-                print(f"Token type: {debug_token.token_type}")
-                print(f"Created at: {debug_token.created_at}")
-                print(f"Expires at: {debug_token.expired_at}")
-                print(f"Is expired: {debug_token.expired_at < datetime.now()}")
-                print(f"OTP match: {debug_token.token == otp}")
-            else:
-                print("No verification token found")
-            
-            # Continue with normal verification
+            # Verify OTP
             verification_result = await verify_user_email(db, user.user_id, otp)
             if not verification_result:
                 raise HTTPException(

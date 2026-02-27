@@ -22,15 +22,27 @@ from .views import ApplicantView
 from app.schemas.user import UserInDB
 from fastapi.exceptions import RequestValidationError
 from fastapi import Request
-import sys
 import os
+import sys
+import tempfile
 from app.utils.document_ocr_utils import extract_document_data
 from app.schemas.profile import ProfileUpdate, SuccessResponse
 from app.utils.email import send_verification_email
 from app.db.repositories.token import create_verification_token, get_valid_verification_token, delete_used_token
-from .controller import ApplicantController  # Add this
+from .controller import ApplicantController
 
-# Add this helper function at the top of the file
+from app.utils.document_ocr_utils import document_type
+from app.core.ocr_doc_validator import validate_document
+
+
+def _safe_unlink(path: Optional[str]) -> None:
+    if path and os.path.isfile(path):
+        try:
+            os.unlink(path)
+        except OSError as e:
+            logger.warning("Could not remove temporary file %s: %s", path, e)
+
+
 def get_full_document_type(doc_type: str) -> str:
     """Convert document type abbreviation to full name"""
     doc_types = {
@@ -85,17 +97,17 @@ async def extract_document_details(
     validation_results = []
     try:
         for doc_type, doc_file in zip(doc_types_list, doc_files):
-            temp_path = f"temp_extract_{doc_type}_{doc_file.filename}"
             content = await doc_file.read()
             await doc_file.seek(0)
-            with open(temp_path, "wb") as buffer:
-                buffer.write(content)
-            result = extract_document_data(temp_path, doc_type)
-            validation_results.append({"type": doc_type, "result": result, "temp_path": temp_path})
+            suffix = os.path.splitext(doc_file.filename or "")[1] or ".bin"
+            with tempfile.NamedTemporaryFile(delete=False, prefix="gpms_extract_", suffix=suffix) as f:
+                f.write(content)
+                temp_path = f.name
             try:
-                os.remove(temp_path)
-            except Exception:
-                pass
+                result = extract_document_data(temp_path, doc_type)
+                validation_results.append({"type": doc_type, "result": result, "temp_path": temp_path})
+            finally:
+                _safe_unlink(temp_path)
 
         response = {"OR": {"file_number": None, "expiration_date": None}, "CR": {"file_number": None}, "DL": {"expiration_date": None}}
         for v in validation_results:
@@ -126,12 +138,7 @@ async def extract_document_details(
         return response
     except Exception as e:
         for v in validation_results:
-            tp = v.get("temp_path") if isinstance(v, dict) else None
-            if tp and os.path.exists(tp):
-                try:
-                    os.remove(tp)
-                except Exception:
-                    pass
+            _safe_unlink(v.get("temp_path") if isinstance(v, dict) else None)
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -150,11 +157,12 @@ async def extract_one_document(
         raise HTTPException(status_code=400, detail="Invalid document type. Use OR, CR, or DL.")
     temp_path = None
     try:
-        temp_path = f"temp_extract_one_{doc_type}_{doc_file.filename}"
         content = await doc_file.read()
         await doc_file.seek(0)
-        with open(temp_path, "wb") as buffer:
-            buffer.write(content)
+        suffix = os.path.splitext(doc_file.filename or "")[1] or ".bin"
+        with tempfile.NamedTemporaryFile(delete=False, prefix="gpms_extract_one_", suffix=suffix) as f:
+            f.write(content)
+            temp_path = f.name
         result = extract_document_data(temp_path, doc_type)
         response = {"file_number": None, "expiration_date": None}
         if doc_type == "OR":
@@ -195,11 +203,7 @@ async def extract_one_document(
                 response["expiration_date"] = str(exp)
         return response
     finally:
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
+        _safe_unlink(temp_path)
 
 
 @router.post("/application")
@@ -368,12 +372,7 @@ async def create_application(
                     "expired_at": exp_date.date()
                 })
             finally:
-                tp = validation_data.get("temp_path")
-                if tp and os.path.exists(tp):
-                    try:
-                        os.remove(tp)
-                    except Exception as e:
-                        print(f"Warning: Could not remove temporary file {tp}: {e}")
+                _safe_unlink(validation_data.get("temp_path"))
 
         # Create application data
         application_data = ApplicationCreate(
@@ -409,16 +408,9 @@ async def create_application(
             } for error in e.errors()]
         )
     except Exception as e:
-        # Clean up any temporary files if validation_results exists
-        if 'validation_results' in locals():
+        if "validation_results" in locals():
             for v in validation_results:
-                try:
-                    tp = v.get("temp_path")
-                    if tp and os.path.exists(tp):
-                        os.remove(tp)
-                except Exception as clean_error:
-                    print(f"Warning: Could not remove temporary file: {clean_error}")
-        
+                _safe_unlink(v.get("temp_path"))
         raise HTTPException(status_code=400, detail=str(e))
 
 # Add this new route
@@ -604,47 +596,29 @@ async def create_authorized_driver(
     db: AsyncSession = Depends(get_db),
     current_user: UserInDB = Depends(get_current_applicant)
 ):
+    driver_temp_path = None
     try:
-        # Validate driver's license
-        driver_temp_path = f"temp_DL_{driver_license.filename}"
-        try:
-            with open(driver_temp_path, "wb") as buffer:
-                content = await driver_license.read()
-                buffer.write(content)
-                await driver_license.seek(0)
-            
-            # Driver text array for validation
-            driver_text_array = [
-                driver_first_name,
-                driver_last_name,
-                driver_birth_date.strftime("%Y/%m/%d"),
-                driver_relationship
-            ]
-
-            reference_path = document_type("DL")
-            if not reference_path:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid document type: DL"
-                )
-
-            # Validate driver's document
-            driver_validation = validate_document(
-                reference_path,
-                driver_temp_path,
-                driver_text_array,
-                doc_type="DL",
-                show_results=True,
-                save_results=True
-            )
-        finally:
-            # Always try to clean up the temp file, but don't fail if it doesn't exist
-            try:
-                if os.path.exists(driver_temp_path):
-                    os.remove(driver_temp_path)
-            except Exception as clean_error:
-                print(f"Warning: Could not remove temporary file {driver_temp_path}: {clean_error}")
-
+        content = await driver_license.read()
+        await driver_license.seek(0)
+        suffix = os.path.splitext(driver_license.filename or "")[1] or ".bin"
+        with tempfile.NamedTemporaryFile(delete=False, prefix="gpms_dl_", suffix=suffix) as f:
+            f.write(content)
+            driver_temp_path = f.name
+        driver_text_array = [
+            driver_first_name,
+            driver_last_name,
+            driver_birth_date.strftime("%Y/%m/%d"),
+            driver_relationship,
+        ]
+        reference_path = document_type("DL")  # Optional; validation uses OCR + applicant data
+        driver_validation = validate_document(
+            reference_path,
+            driver_temp_path,
+            driver_text_array,
+            doc_type="DL",
+            show_results=False,
+            save_results=False,
+        )
         if not driver_validation["is_valid"]:
             raise HTTPException(
                 status_code=422,
@@ -658,7 +632,6 @@ async def create_authorized_driver(
                     }
                 }
             )
-
         view = ApplicantView(db)
         return await view.create_authorized_driver(
             driver_first_name=driver_first_name,
@@ -671,11 +644,12 @@ async def create_authorized_driver(
             driver_license_exp_date=driver_license_exp_date,
             user_id=current_user.user_id
         )
-
     except HTTPException as he:
         raise he
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        _safe_unlink(driver_temp_path)
 
 @router.post("/application/{application_id}/assign-drivers")
 async def assign_drivers_to_application(
@@ -861,7 +835,7 @@ async def update_application(
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Error in update_application: {str(e)}")
+        logger.exception("Error in update_application: %s", e)
         raise HTTPException(
             status_code=500,
             detail=f"Failed to update application: {str(e)}"
@@ -878,11 +852,24 @@ async def request_email_verification(
     return await view.request_email_verification(email, current_user.user_id)
 
 
+@router.post("/verify-email-otp", response_model=dict)
+async def verify_email_otp(
+    otp: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """Verify email OTP only (no profile update). Used by application flow."""
+    return await ApplicantView(db).verify_email_otp(
+        user_id=current_user.user_id,
+        otp=otp
+    )
+
+
 @router.put("/verify-and-update-profile", response_model=dict)
 async def verify_and_update_profile(
     first_name: str = Form(...),
     last_name: str = Form(...),
-    birth_date: date = Form(...),
+    birth_date: str = Form(...),
     sex: str = Form(...),
     contact_no: str = Form(...),
     address: str = Form(...),
@@ -892,8 +879,15 @@ async def verify_and_update_profile(
     db: AsyncSession = Depends(get_db),
     current_user: UserInDB = Depends(get_current_applicant)
 ):
+    """Verify OTP and update profile. For use only in Profile / update profile section."""
     try:
-        # Process image if provided
+        try:
+            birth_date_parsed = datetime.strptime(birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid birth_date format (use YYYY-MM-DD)"
+            )
         image_data = None
         if image:
             if not image.content_type.startswith("image/"):
@@ -902,11 +896,10 @@ async def verify_and_update_profile(
                     detail="File uploaded is not an image"
                 )
             image_data = await image.read()
-
         return await ApplicantView(db).verify_and_update_profile(
             first_name=first_name,
             last_name=last_name,
-            birth_date=birth_date,
+            birth_date=birth_date_parsed,
             sex=sex,
             contact_no=contact_no,
             address=address,
@@ -915,6 +908,8 @@ async def verify_and_update_profile(
             image_data=image_data,
             user_id=current_user.user_id
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

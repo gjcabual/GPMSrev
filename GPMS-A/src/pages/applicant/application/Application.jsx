@@ -11,8 +11,8 @@ import { FaUserCircle } from "react-icons/fa";
 const steps = [
  "Personal Information",
  "Confirm Email Address",
- "Vehicle Information",
  "Documents",
+ "Vehicle Information",
  "Confirm document details",
 ];
 
@@ -38,6 +38,7 @@ export const Application = () => {
  const [hasApiError, setHasApiError] = useState(false);
  const [isEmailVerified, setIsEmailVerified] = useState(false);
  const [agreedToTerms, setAgreedToTerms] = useState(false);
+ const [useAccountDetailsAsApplicant, setUseAccountDetailsAsApplicant] = useState(true);
  const [documentFilesRef, setDocumentFilesRef] = useState({
   or: null,
   cr: null,
@@ -103,14 +104,14 @@ export const Application = () => {
       setProfileImage={setProfileImage}
       setHasApiError={setHasApiError}
       setAgreedToTerms={setAgreedToTerms}
+      useAccountDetailsAsApplicant={useAccountDetailsAsApplicant}
+      setUseAccountDetailsAsApplicant={setUseAccountDetailsAsApplicant}
      />
     );
    case 1:
     return (
      <Step2
       email={profileEmail}
-      profileData={profileData}
-      profileImage={profileImage}
       onChangeEmail={() => setCurrentStep(0)}
       onVerificationSuccess={() => {
        setIsEmailVerified(true);
@@ -121,6 +122,16 @@ export const Application = () => {
     );
    case 2:
     return (
+     <Step4
+      setDocumentFiles={setDocumentFilesRef}
+      documentFiles={documentFilesRef}
+      setHasApiError={setHasApiError}
+      setExtractedDocDetails={setExtractedDocDetails}
+      setConfirmedDocDetails={setConfirmedDocDetails}
+     />
+    );
+   case 3:
+    return (
      <Step3
       vehicleFormData={vehicleFormData}
       setVehicleFormData={setVehicleFormData}
@@ -129,16 +140,6 @@ export const Application = () => {
       buildingLocation={buildingLocation}
       setBuildingLocation={setBuildingLocation}
       setHasApiError={setHasApiError}
-     />
-    );
-   case 3:
-    return (
-     <Step4
-      setDocumentFiles={setDocumentFilesRef}
-      documentFiles={documentFilesRef}
-      setHasApiError={setHasApiError}
-      setExtractedDocDetails={setExtractedDocDetails}
-      setConfirmedDocDetails={setConfirmedDocDetails}
      />
     );
    case 4:
@@ -321,8 +322,8 @@ export const Application = () => {
    if (currentStep === 0) {
     setType(true);
    } else {
-    // Clear front_image and back_image when navigating back to Step 3 from Step 4
-    if (currentStep === 3) {
+    // Clear vehicle images when navigating back to Vehicle step from Confirm step
+    if (currentStep === 4) {
      setVehicleFormData((prev) => ({
       ...prev,
       front_image: null,
@@ -399,13 +400,19 @@ export const Application = () => {
     return;
    }
   } else if (currentStep === 2) {
-   // Check vehicle data and building location
+   // Documents step: require all docs before proceeding to Vehicle
+   if (!documentFilesRef?.or || !documentFilesRef?.cr || !documentFilesRef?.dl) {
+    toast.error("Please upload and confirm all required documents (OR, CR, DL) before proceeding.");
+    return;
+   }
+   setCurrentStep(3);
+  } else if (currentStep === 3) {
+   // Vehicle step: validate and submit vehicle, then go to Confirm
    if (!vehicleData) {
     toast.error("Please complete all vehicle information");
     return;
    }
 
-   // Add specific checks for required vehicle images
    if (!vehicleData.front_image) {
     toast.error("Please upload a front image of your vehicle");
     return;
@@ -422,43 +429,34 @@ export const Application = () => {
    }
 
    try {
-    setIsRequestingOTP(true); // Reuse loading state
+    setIsRequestingOTP(true);
     setHasApiError(false);
     const vehicleFormData = new FormData();
 
-    // Add vehicle fields according to the screenshot
     vehicleFormData.append("plate_no", vehicleData.plate_no);
     vehicleFormData.append("model", vehicleData.model);
     vehicleFormData.append("brand", vehicleData.brand);
     vehicleFormData.append("vehicle_type", vehicleData.vehicle_type);
     vehicleFormData.append("color", vehicleData.color);
 
-    // Add building name if provided
     if (buildingLocation) {
      vehicleFormData.append("building_name", buildingLocation);
     }
 
-    // Add document types
     vehicleFormData.append("doc_types", "OR,CR,DL");
 
-    // Add registration and expiration dates
     const currentDate = new Date();
     const expireDate = new Date(currentDate);
     expireDate.setFullYear(expireDate.getFullYear() + 1);
 
-    // Format dates as YYYY-MM-DD
-    const formatDateString = (date) => {
-     return date.toISOString().split("T")[0];
-    };
+    const formatDateString = (date) => date.toISOString().split("T")[0];
 
-    // Format for registration dates: YYYY-MM-DD,YYYY-MM-DD,YYYY-MM-DD
     const regDateString = [
      formatDateString(currentDate),
      formatDateString(currentDate),
      formatDateString(currentDate),
     ].join(",");
 
-    // Format for expiration dates: YYYY-MM-DD,YYYY-MM-DD,YYYY-MM-DD
     const expDateString = [
      formatDateString(expireDate),
      formatDateString(expireDate),
@@ -467,15 +465,11 @@ export const Application = () => {
 
     vehicleFormData.append("doc_reg_dates", regDateString);
     vehicleFormData.append("doc_exp_dates", expDateString);
-
-    // Add application type
     vehicleFormData.append("app_type", "NEW");
 
-    // Add vehicle images if provided
     if (vehicleData.front_image) {
      vehicleFormData.append("front_image", vehicleData.front_image);
     }
-
     if (vehicleData.back_image) {
      vehicleFormData.append("back_image", vehicleData.back_image);
     }
@@ -498,9 +492,7 @@ export const Application = () => {
     }
 
     toast.success("Vehicle information saved successfully");
-
-    // Move to next step
-    setCurrentStep((prev) => prev + 1);
+    setCurrentStep(4);
    } catch (error) {
     console.error("Error submitting vehicle data:", error);
     toast.error(
@@ -510,12 +502,6 @@ export const Application = () => {
    } finally {
     setIsRequestingOTP(false);
    }
-  } else if (currentStep === 3) {
-   if (!documentFilesRef?.or || !documentFilesRef?.cr || !documentFilesRef?.dl) {
-    toast.error("Please upload and confirm all required documents (CR, OR, DL) before proceeding.");
-    return;
-   }
-   setCurrentStep(4);
   } else {
    setCurrentStep((prev) => prev + 1);
   }
@@ -608,7 +594,7 @@ export const Application = () => {
          onClick={handleNextStep}
          disabled={
           (currentStep === 0 && !agreedToTerms) ||
-          (currentStep === 3 && (!documentFilesRef?.or || !documentFilesRef?.cr || !documentFilesRef?.dl)) ||
+          (currentStep === 2 && (!documentFilesRef?.or || !documentFilesRef?.cr || !documentFilesRef?.dl)) ||
           ((isRequestingOTP || isExtracting) && !hasApiError)
          }
         >
@@ -669,16 +655,7 @@ const Timeline = ({ currentStep, steps }) => {
  );
 };
 
-const Step1 = ({
- setProfileEmail,
- setProfileData,
- setProfileImage,
- setHasApiError,
- setAgreedToTerms,
-}) => {
- const [image, setImage] = useState(null);
- const [previewImage, setPreviewImage] = useState(null);
- const [profileData, setLocalProfileData] = useState({
+const emptyProfileForm = {
   first_name: "",
   last_name: "",
   email: "",
@@ -688,10 +665,24 @@ const Step1 = ({
   sex: "",
   image_url: null,
   has_image: false,
- });
+};
+
+const Step1 = ({
+ setProfileEmail,
+ setProfileData,
+ setProfileImage,
+ setHasApiError,
+ setAgreedToTerms,
+ useAccountDetailsAsApplicant,
+ setUseAccountDetailsAsApplicant,
+}) => {
+ const [image, setImage] = useState(null);
+ const [previewImage, setPreviewImage] = useState(null);
+ const [profileData, setLocalProfileData] = useState({ ...emptyProfileForm });
  const [loading, setLoading] = useState(true);
  const [agreeToTerms, setAgreeToTerms] = useState(false);
  const [fetchError, setFetchError] = useState(false);
+ const fetchedProfileRef = useRef(null);
 
  // Update parent when agreeToTerms changes
  useEffect(() => {
@@ -703,7 +694,7 @@ const Step1 = ({
   setHasApiError(fetchError);
  }, [fetchError, setHasApiError]);
 
- // Fetch profile data on component mount
+ // Fetch profile data on component mount (for autofill option)
  useEffect(() => {
   const fetchProfileData = async () => {
    try {
@@ -723,12 +714,16 @@ const Step1 = ({
     }
 
     const data = await response.json();
-    setLocalProfileData(data);
-    setProfileData(data); // Send data to parent component
+    fetchedProfileRef.current = data;
 
-    // Set the email in the parent component
-    if (data.email) {
-     setProfileEmail(data.email);
+    if (useAccountDetailsAsApplicant) {
+     setLocalProfileData(data);
+     setProfileData(data);
+     if (data.email) setProfileEmail(data.email);
+    } else {
+     setLocalProfileData({ ...emptyProfileForm });
+     setProfileData({ ...emptyProfileForm });
+     setProfileEmail("");
     }
    } catch (error) {
     console.error("Error fetching profile data:", error);
@@ -743,6 +738,62 @@ const Step1 = ({
 
   fetchProfileData();
  }, [setProfileEmail, setProfileData]);
+
+ // When "use account details" is toggled: fill from fetched profile or clear form
+ useEffect(() => {
+  if (loading) return;
+  if (useAccountDetailsAsApplicant && fetchedProfileRef.current) {
+   const data = fetchedProfileRef.current;
+   setLocalProfileData(data);
+   setProfileData(data);
+   if (data.email) setProfileEmail(data.email);
+  } else if (!useAccountDetailsAsApplicant) {
+   setLocalProfileData({ ...emptyProfileForm });
+   setProfileData({ ...emptyProfileForm });
+   setProfileEmail("");
+   setImage(null);
+   setPreviewImage(null);
+   setProfileImage(null);
+  }
+ }, [useAccountDetailsAsApplicant]);
+
+ // Agreement checkbox can only be checked when all fields are filled (or when using account details)
+ const hasProfileImage = !!(previewImage || (profileData && profileData.has_image));
+ const allFieldsFilled = useAccountDetailsAsApplicant
+  ? hasProfileImage && profileData?.first_name && profileData?.last_name && profileData?.email
+  : hasProfileImage &&
+    (profileData?.first_name || "").trim() !== "" &&
+    (profileData?.last_name || "").trim() !== "" &&
+    (profileData?.email || "").trim() !== "" &&
+    (profileData?.contact_no || "").trim() !== "" &&
+    (profileData?.address || "").trim() !== "" &&
+    (profileData?.birth_date || "").trim() !== "" &&
+    (profileData?.sex || "").trim() !== "";
+
+ const prevAllFieldsFilledRef = useRef(true);
+ useEffect(() => {
+  if (prevAllFieldsFilledRef.current && !allFieldsFilled && agreeToTerms) {
+   setAgreeToTerms(false);
+  }
+  prevAllFieldsFilledRef.current = allFieldsFilled;
+ }, [allFieldsFilled, agreeToTerms]);
+
+ const hasShownProfileNoticeRef = useRef(false);
+ useEffect(() => {
+  if (useAccountDetailsAsApplicant && !loading && !hasShownProfileNoticeRef.current) {
+   hasShownProfileNoticeRef.current = true;
+   toast.info("Your profile details are used for this application. Update them in the Profile section if needed.", { duration: 5000 });
+  }
+  if (!useAccountDetailsAsApplicant) hasShownProfileNoticeRef.current = false;
+ }, [useAccountDetailsAsApplicant, loading]);
+
+ const handleConfirmCheckboxClick = (e) => {
+  if (!allFieldsFilled) {
+   e.preventDefault();
+   e.stopPropagation();
+   toast.warning("Please fill in all fields above (including profile image) before you can confirm and proceed.", { duration: 5000 });
+  }
+ };
 
  const handleImageChange = (event) => {
   const file = event.target.files[0];
@@ -849,6 +900,24 @@ const Step1 = ({
    <div className="p-4 md:p-5 flex flex-col justify-between h-full">
     <h1 className="text-lg md:text-xl font-bold">Personal Information</h1>
 
+    <div className="flex items-center gap-2 mt-3 mb-1">
+     <input
+      type="checkbox"
+      id="use-account-details"
+      checked={useAccountDetailsAsApplicant}
+      onChange={(e) => setUseAccountDetailsAsApplicant(e.target.checked)}
+      className="rounded border-primary text-primary focus:ring-primary"
+     />
+     <label htmlFor="use-account-details" className="text-sm text-gray-700">
+      Use my account details as applicant
+     </label>
+    </div>
+    <p className="text-xs text-gray-500 mb-2">
+     {useAccountDetailsAsApplicant
+      ? "Fields are filled from your profile. Change your details only in Profile settings."
+      : "Enter applicant details manually (e.g. applying for someone else)."}
+    </p>
+
     {loading ? (
      <div className="flex justify-center items-center h-40">
       <div className="animate-spin h-8 w-8 border-3 border-primary border-t-transparent rounded-full"></div>
@@ -857,12 +926,12 @@ const Step1 = ({
      <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-2 mt-3">
       <div className="flex flex-col items-center">
        <label
-        htmlFor="profile"
+        htmlFor={useAccountDetailsAsApplicant ? undefined : "profile"}
         className={`h-[70px] w-[70px] ${
          !previewImage && !profileData.has_image
           ? "border-2 border-red-400"
           : ""
-        } bg-gray-300 rounded-full flex items-center justify-center cursor-pointer overflow-hidden`}
+        } ${useAccountDetailsAsApplicant ? "cursor-default" : "cursor-pointer"} bg-gray-300 rounded-full flex items-center justify-center overflow-hidden ${useAccountDetailsAsApplicant ? "opacity-90" : ""}`}
        >
         {previewImage ? (
          <img
@@ -884,19 +953,11 @@ const Step1 = ({
           }
          />
         ) : (
-         <span className="text-gray-500 text-sm text-center">Upload</span>
+         <span className="text-gray-500 text-sm text-center">Click to upload</span>
         )}
        </label>
-       <div>
-        <label
-         htmlFor="profile"
-         className="mt-2 h-8 border border-primary text-primary rounded-md px-3 text-xs cursor-pointer flex items-center justify-center"
-        >
-         Upload Image
-        </label>
-       </div>
        <p
-        className={`text-xs mt-1 ${
+        className={`text-xs mt-1 text-center w-full ${
          !previewImage && !profileData.has_image
           ? "text-red-500"
           : "text-gray-500"
@@ -910,6 +971,7 @@ const Step1 = ({
         className="hidden"
         accept="image/*"
         onChange={handleImageChange}
+        disabled={useAccountDetailsAsApplicant}
        />
       </div>
       <div className="flex flex-col gap-2 w-full">
@@ -924,7 +986,8 @@ const Step1 = ({
           id="first_name"
           value={profileData.first_name || ""}
           onChange={handleInputChange}
-          className="h-8 rounded-md px-3 text-sm border border-primary"
+          readOnly={useAccountDetailsAsApplicant}
+          className={`h-8 rounded-md px-3 text-sm border border-primary ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
          />
         </div>
         <div className="flex flex-col gap-1">
@@ -937,7 +1000,8 @@ const Step1 = ({
           id="last_name"
           value={profileData.last_name || ""}
           onChange={handleInputChange}
-          className="h-8 rounded-md px-3 text-sm border border-primary"
+          readOnly={useAccountDetailsAsApplicant}
+          className={`h-8 rounded-md px-3 text-sm border border-primary ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
          />
         </div>
 
@@ -951,7 +1015,9 @@ const Step1 = ({
           id="email"
           value={profileData.email || ""}
           onChange={handleInputChange}
-          className="h-8 rounded-md px-3 text-sm border border-primary"
+          readOnly={useAccountDetailsAsApplicant}
+          className={`h-8 rounded-md px-3 text-sm border border-primary ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
+          title={useAccountDetailsAsApplicant ? "Edit in Profile or uncheck 'Use my account details' to apply for someone else." : ""}
          />
         </div>
         <div className="flex flex-col gap-1">
@@ -964,7 +1030,8 @@ const Step1 = ({
           id="contact_no"
           value={profileData.contact_no || ""}
           onChange={handleInputChange}
-          className="h-8 rounded-md px-3 text-sm border border-primary"
+          readOnly={useAccountDetailsAsApplicant}
+          className={`h-8 rounded-md px-3 text-sm border border-primary ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
          />
         </div>
        </div>
@@ -979,7 +1046,8 @@ const Step1 = ({
          id="address"
          value={profileData.address || ""}
          onChange={handleInputChange}
-         className="h-8 rounded-md px-3 text-sm border border-primary"
+         readOnly={useAccountDetailsAsApplicant}
+         className={`h-8 rounded-md px-3 text-sm border border-primary ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
         />
        </div>
 
@@ -994,7 +1062,8 @@ const Step1 = ({
           id="birth_date"
           value={profileData.birth_date || ""}
           onChange={handleInputChange}
-          className="h-8 px-3 text-sm border border-primary rounded-md"
+          readOnly={useAccountDetailsAsApplicant}
+          className={`h-8 px-3 text-sm border border-primary rounded-md ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
          />
         </div>
         <div className="flex flex-col gap-1">
@@ -1006,7 +1075,8 @@ const Step1 = ({
           id="sex"
           value={profileData.sex || ""}
           onChange={handleInputChange}
-          className="h-8 px-3 text-sm border border-primary rounded-md"
+          disabled={useAccountDetailsAsApplicant}
+          className={`h-8 px-3 text-sm border border-primary rounded-md ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
          >
           <option value="">Select</option>
           <option value="MALE">Male</option>
@@ -1015,17 +1085,24 @@ const Step1 = ({
         </div>
        </div>
 
-       <div className="flex items-center gap-2 mt-2">
-        <input
-         type="checkbox"
-         id="agree"
-         checked={agreeToTerms}
-         onChange={(e) => setAgreeToTerms(e.target.checked)}
-        />
-        <label htmlFor="agree" className="text-gray-500 text-xs">
-         I confirm that I have reviewed and agree that the data entered is
-         accurate and complete.
-        </label>
+       <div className="mt-2">
+        <div className="flex items-center gap-2" onClick={handleConfirmCheckboxClick}>
+         <input
+          type="checkbox"
+          id="agree"
+          checked={agreeToTerms}
+          onChange={(e) => allFieldsFilled && setAgreeToTerms(e.target.checked)}
+          disabled={!allFieldsFilled}
+          className={!allFieldsFilled ? "cursor-not-allowed opacity-60" : ""}
+         />
+         <label
+          htmlFor="agree"
+          className={`text-xs select-none ${!allFieldsFilled ? "text-gray-400 cursor-not-allowed" : "text-gray-500 cursor-pointer"}`}
+         >
+          I confirm that I have reviewed and agree that the data entered is
+          accurate and complete.
+         </label>
+        </div>
        </div>
       </div>
      </div>
@@ -1037,8 +1114,6 @@ const Step1 = ({
 
 const Step2 = ({
  email,
- profileData,
- profileImage,
  onChangeEmail,
  onVerificationSuccess,
  setHasApiError,
@@ -1172,29 +1247,12 @@ const Step2 = ({
    setVerifyError(false);
 
    const formData = new FormData();
-
-   // Add OTP code first
    formData.append("otp", otpCode);
 
-   // Add profile data, excluding image-related fields
-   if (profileData) {
-    Object.entries(profileData).forEach(([key, value]) => {
-     // Skip image-related fields and null/undefined values
-     if (value && key !== "image_url" && key !== "has_image") {
-      formData.append(key, value);
-     }
-    });
-   }
-
-   // Add the image file if it exists - using the same approach as ProfileContent.jsx
-   if (profileImage instanceof File) {
-    formData.append("image", profileImage);
-   }
-
    const response = await fetch(
-    buildUrl("/applicant/verify-and-update-profile"),
+    buildUrl("/applicant/verify-email-otp"),
     {
-     method: "PUT",
+     method: "POST",
      headers: {
       Authorization: `Bearer ${localStorage.getItem("token")}`,
      },
@@ -1211,8 +1269,7 @@ const Step2 = ({
     return;
    }
 
-   // Success
-   toast.success("Profile updated successfully!");
+   toast.success("Email verified successfully.");
    onVerificationSuccess();
   } catch (err) {
    console.error("Error during verification:", err);
@@ -1904,18 +1961,22 @@ const Step4 = ({
  });
  const [isExtractingOne, setIsExtractingOne] = useState(false);
  const [fileError, setFileError] = useState(false);
- const [docZoom, setDocZoom] = useState(100);
  const [showDocFullscreen, setShowDocFullscreen] = useState(false);
+ const [fullscreenZoom, setFullscreenZoom] = useState(100);
 const fileInputRef = useRef(null);
   const extractedPayloadRef = useRef(null);
   const [pendingExtractedData, setPendingExtractedData] = useState(null);
 
- const MIN_ZOOM = 50;
- const MAX_ZOOM = 200;
- const ZOOM_STEP = 25;
- const handleDocZoomIn = () => setDocZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP));
- const handleDocZoomOut = () => setDocZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP));
- const handleDocZoomReset = () => setDocZoom(100);
+ const FS_ZOOM_MIN = 25;
+ const FS_ZOOM_MAX = 300;
+ const FS_ZOOM_STEP = 10;
+ const handleDocPreviewClick = () => {
+  setFullscreenZoom(100);
+  setShowDocFullscreen(true);
+ };
+ const handleFullscreenZoomIn = () => setFullscreenZoom((z) => Math.min(FS_ZOOM_MAX, z + FS_ZOOM_STEP));
+ const handleFullscreenZoomOut = () => setFullscreenZoom((z) => Math.max(FS_ZOOM_MIN, z - FS_ZOOM_STEP));
+ const handleFullscreenZoomReset = () => setFullscreenZoom(100);
 
  useEffect(() => {
   setHasApiError(fileError);
@@ -2000,11 +2061,16 @@ const fileInputRef = useRef(null);
     body_type: data.body_type,
     piston_displacement: data.piston_displacement,
    };
+   const hasExtractedData = docType === "CR"
+    ? (toStr(payload.file_number) || toStr(payload.owner_name) || toStr(payload.date) || toStr(payload.plate_number) || toStr(payload.make))
+    : (toStr(payload.file_number) || toStr(payload.expiration_date));
+   if (!hasExtractedData) {
+    toast.info("No data was extracted from the document. Please enter the details manually.");
+   }
    setModalFile(file);
    setModalDocType(docType);
    extractedPayloadRef.current = payload;
    setPendingExtractedData({ ...payload, payload: payload });
-   setDocZoom(100);
    setShowDocFullscreen(false);
    setShowDocModal(true);
    setTimeout(() => {
@@ -2176,8 +2242,8 @@ const fileInputRef = useRef(null);
 
    {showDocModal && modalFile && (
     <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-     <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-auto shadow-xl">
-      <div className="p-4 border-b flex justify-between items-center">
+     <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-xl">
+      <div className="p-4 border-b flex-shrink-0 flex justify-between items-center">
        <h2 className="text-lg font-bold text-primary">
         Confirm {DOC_LABELS[modalDocType]} details
        </h2>
@@ -2197,63 +2263,34 @@ const fileInputRef = useRef(null);
         <IoClose size={24} />
        </button>
       </div>
-      <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-       <div className="flex flex-col items-center">
+       <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+       <div className="flex-shrink-0 md:w-1/2 p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-gray-200 bg-gray-50/50">
         <p className="text-sm font-medium text-gray-700 mb-2">Uploaded document</p>
-        <div className="flex items-center gap-2 mb-2">
-         <button
-          type="button"
-          onClick={handleDocZoomOut}
-          disabled={docZoom <= MIN_ZOOM}
-          className="h-8 w-8 rounded border border-gray-300 bg-white text-gray-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-          aria-label="Zoom out"
-         >
-          −
-         </button>
-         <span className="text-sm text-gray-600 min-w-[4rem] text-center">{docZoom}%</span>
-         <button
-          type="button"
-          onClick={handleDocZoomIn}
-          disabled={docZoom >= MAX_ZOOM}
-          className="h-8 w-8 rounded border border-gray-300 bg-white text-gray-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-          aria-label="Zoom in"
-         >
-          +
-         </button>
-         {docZoom !== 100 && (
-          <button
-           type="button"
-           onClick={handleDocZoomReset}
-           className="text-xs text-primary hover:underline"
-          >
-           Reset
-          </button>
-         )}
-        </div>
-        <div className="overflow-auto max-h-[400px] w-full flex items-center justify-center border rounded bg-gray-100">
+        <div className="w-full flex items-center justify-center border rounded bg-gray-100 min-h-[200px] max-h-[50vh]">
          <div
           className="cursor-zoom-in inline-flex items-center justify-center p-2"
-          onClick={() => setShowDocFullscreen(true)}
+          onClick={handleDocPreviewClick}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && setShowDocFullscreen(true)}
+          onKeyDown={(e) => e.key === "Enter" && handleDocPreviewClick()}
           aria-label="Open document in fullscreen"
          >
           <img
            src={URL.createObjectURL(modalFile)}
            alt={DOC_LABELS[modalDocType]}
-           className="max-h-[360px] w-auto border rounded object-contain select-none"
-           style={{ transform: `scale(${docZoom / 100})`, transformOrigin: "center center" }}
+           className="max-h-[360px] w-auto border rounded object-contain select-none pointer-events-none"
            draggable={false}
           />
          </div>
         </div>
         <p className="text-xs text-gray-500 mt-1">Click image for fullscreen</p>
        </div>
-       <div className="flex flex-col gap-4">
-        <p className="text-sm font-medium text-gray-700">Extracted information (edit if needed)</p>
+       <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4">
         {(() => {
          const pd = extractedPayloadRef.current || pendingExtractedData?.payload || pendingExtractedData;
+         const hasExtractedData = pd && (modalDocType === "CR"
+          ? (pd.file_number || pd.owner_name || pd.date || pd.plate_number || pd.make || pd.engine_no || pd.chassis_no)
+          : (pd.file_number || pd.expiration_date));
          const f = (key) => {
           const v = modalForm[key];
           if (v != null && String(v).trim() !== "") return String(v).trim();
@@ -2262,6 +2299,11 @@ const fileInputRef = useRef(null);
          };
          return (
           <>
+        <p className="text-sm font-medium text-gray-700">
+         {hasExtractedData
+          ? "User-assisted: fields were filled from your document. Please review and correct any errors or add missing information, then click Proceed."
+          : "No data was extracted from your document. Please enter the details manually."}
+        </p>
         {(modalDocType === "CR" || modalDocType === "OR") && (
          <div>
           <label className="block text-sm text-gray-600 mb-1">
@@ -2426,34 +2468,36 @@ const fileInputRef = useRef(null);
      aria-modal="true"
      aria-label="Document fullscreen view"
     >
-     <div className="flex items-center justify-between p-3 bg-black/50">
+     <div className="flex items-center justify-between p-3 bg-black/50 gap-4">
       <div className="flex items-center gap-2">
        <button
         type="button"
-        onClick={handleDocZoomOut}
-        disabled={docZoom <= MIN_ZOOM}
-        className="h-9 w-9 rounded bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20"
+        onClick={handleFullscreenZoomOut}
+        disabled={fullscreenZoom <= FS_ZOOM_MIN}
+        className="h-9 w-9 rounded bg-white/10 text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center font-medium"
         aria-label="Zoom out"
        >
         −
        </button>
-       <span className="text-white text-sm min-w-[4rem] text-center">{docZoom}%</span>
+       <span className="text-sm text-white min-w-[3.5rem] text-center tabular-nums">{fullscreenZoom}%</span>
        <button
         type="button"
-        onClick={handleDocZoomIn}
-        disabled={docZoom >= MAX_ZOOM}
-        className="h-9 w-9 rounded bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20"
+        onClick={handleFullscreenZoomIn}
+        disabled={fullscreenZoom >= FS_ZOOM_MAX}
+        className="h-9 w-9 rounded bg-white/10 text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center font-medium"
         aria-label="Zoom in"
        >
         +
        </button>
-       <button
-        type="button"
-        onClick={handleDocZoomReset}
-        className="text-sm text-white/80 hover:text-white px-2"
-       >
-        Reset
-       </button>
+       {fullscreenZoom !== 100 && (
+        <button
+         type="button"
+         onClick={handleFullscreenZoomReset}
+         className="text-xs text-white/90 hover:text-white underline"
+        >
+         Reset
+        </button>
+       )}
       </div>
       <button
        type="button"
@@ -2469,7 +2513,7 @@ const fileInputRef = useRef(null);
        src={URL.createObjectURL(modalFile)}
        alt={DOC_LABELS[modalDocType]}
        className="max-w-full max-h-full w-auto object-contain select-none"
-       style={{ transform: `scale(${docZoom / 100})`, transformOrigin: "center center" }}
+       style={{ transform: `scale(${fullscreenZoom / 100})`, transformOrigin: "center center" }}
        draggable={false}
        onClick={(e) => e.stopPropagation()}
       />
@@ -2504,8 +2548,8 @@ const Step5ConfirmDetails = ({
      Confirm document details
     </h1>
     <p className="text-sm text-gray-600 text-center">
-     The fields below are filled from your uploaded documents. Only edit or add
-     information that is missing or incorrect, then confirm and submit.
+     User-assisted: the fields below were filled from your uploaded documents.
+     Please review, correct any errors, or add missing information, then confirm and submit.
     </p>
 
     <div className="space-y-4">

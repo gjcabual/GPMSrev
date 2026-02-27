@@ -1,9 +1,11 @@
+import os
 import re
-from app.utils.image_ocr_utils import process_image, compare_images
-from app.utils.text_ocr_utils import validate_credentials, compare_text_array, extract_document_reference
-from app.utils.common_utils import get_text_from_file
+import logging
+from app.utils.text_ocr_utils import compare_text_array, extract_document_reference
 from app.utils.date_ocr_utils import extract_dates
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_get_after_colon(line, max_len=200):
@@ -15,6 +17,67 @@ def _safe_get_after_colon(line, max_len=200):
         return None
     s = (parts[1] or "").strip()
     return s[:max_len] if s else None
+
+
+def _valid_piston(s):
+    """Accept only plausible piston displacement (e.g. 110, 110cc, 1.5L). Reject single digit or garbage."""
+    if not s or len(s) > 20:
+        return None
+    s = s.strip()
+    m = re.match(r"^([\d.]+)\s*(cc|cm³|l|liter)?$", s, re.I)
+    if not m:
+        return None
+    num_part = m.group(1)
+    if len(num_part) < 2 and "cc" not in (m.group(2) or "").lower():  # reject bare "4"
+        try:
+            if float(num_part) < 10:  # single digit or tiny number
+                return None
+        except ValueError:
+            return None
+    return m.group(0).strip()
+
+
+def _valid_year(s):
+    """Accept only 4-digit year."""
+    if not s:
+        return None
+    m = re.search(r"(19\d{2}|20\d{2})", str(s).strip())
+    return m.group(1) if m else None
+
+
+# Values that must not be accepted as engine/chassis (placeholder or junk)
+_ENGINE_CHASSIS_BLOCKLIST = frozenset(
+    ("fromcr", "from", "cr", "no", "na", "n/a", "none", "blank", "fromcr.")
+)
+
+
+def _valid_engine_chassis(s):
+    """Accept alphanumeric + hyphen, reasonable length. Reject placeholders and garbage."""
+    if not s or len(s) < 4 or len(s) > 30:
+        return None
+    s = re.sub(r"\s+", "", str(s).strip())
+    if not re.match(r"^[A-Za-z0-9\-]+$", s):
+        return None
+    if s.lower() in _ENGINE_CHASSIS_BLOCKLIST:
+        return None
+    return s
+
+
+def _valid_make(s):
+    """Accept only make-like strings (e.g. Honda, Yamaha). Reject OCR garbage with punctuation."""
+    if not s or len(s) > 50:
+        return None
+    s = str(s).strip()
+    if len(s) < 2:
+        return None
+    # Reject if too many punctuation or digits (garbled OCR)
+    punct_digit = sum(1 for c in s if c in ".=$-+*/\\|[]{}()@#%&*" or c.isdigit())
+    if punct_digit > len(s) // 2 or punct_digit > 3:
+        return None
+    # Must be mostly letters and spaces/hyphens
+    if not re.search(r"[A-Za-z]{2,}", s):
+        return None
+    return s[:50]
 
 
 def extract_cr_fields(text):
@@ -47,62 +110,58 @@ def extract_cr_fields(text):
             if not line:
                 continue
             line_lower = line.lower()
-            # Owner / Registered owner
-            if "owner" in line_lower and "name" not in line_lower:
-                val = _safe_get_after_colon(line, 120) or (out["owner_name"] or "")
-                if val:
-                    out["owner_name"] = val
-                if not out["owner_name"] and i + 1 < len(lines) and len(lines[i + 1]) > 2:
-                    out["owner_name"] = lines[i + 1].strip()[:120]
-            if "owner" in line_lower and "name" in line_lower:
-                val = _safe_get_after_colon(line, 120) or (out["owner_name"] or (lines[i + 1].strip()[:120] if i + 1 < len(lines) else ""))
-                if val:
-                    out["owner_name"] = val
+            # Owner (LTO: "COMPLETE OWNERS NAME" or "OWNER'S NAME")
+            if ("owner" in line_lower and "name" in line_lower) or ("owners" in line_lower and "name" in line_lower):
+                val = _safe_get_after_colon(line, 120) or (lines[i + 1].strip()[:120] if i + 1 < len(lines) else "")
+                if val and val.lower().strip() not in ("from cr", "from cr.", ""):
+                    val = val.strip()
+                    if re.search(r"[A-Za-z]{2,}", val) and len(val) >= 3 and len(val) <= 120:
+                        out["owner_name"] = val[:120]
+            elif "owner" in line_lower and not out["owner_name"] and i + 1 < len(lines):
+                val = _safe_get_after_colon(line, 120) or lines[i + 1].strip()[:120]
+                if val and val.lower().strip() not in ("from cr", "from cr.", ""):
+                    val = val.strip()
+                    if re.search(r"[A-Za-z]{2,}", val) and len(val) >= 3 and len(val) <= 120:
+                        out["owner_name"] = val[:120]
             # Address
             if "address" in line_lower:
                 val = _safe_get_after_colon(line, 200) or (lines[i + 1].strip()[:200] if i + 1 < len(lines) else None)
-                if val:
-                    out["owner_address"] = val
+                if val and val.lower() not in ("from cr", "from cr.", ""):
+                    out["owner_address"] = val.strip()[:200]
             # Engine no.
-            if "engine" in line_lower and ("no" in line_lower or "number" in line_lower or ":" in line_lower):
+            if "engine" in line_lower and ("no" in line_lower or "number" in line_lower or ":" in line_lower or "." in line):
                 rest = _safe_get_after_colon(line, 100) or line
-                match = re.search(r"[\w\-]{4,20}", rest)
+                match = re.search(r"[A-Za-z0-9\-]{4,25}", rest)
                 if match and not re.match(r"^\d{4}[-—\s]\d{11}$", (rest or "").strip()):
-                    out["engine_no"] = match.group(0).strip()[:30]
+                    out["engine_no"] = _valid_engine_chassis(match.group(0).strip()) or out["engine_no"]
             # Chassis no.
             if "chassis" in line_lower:
                 rest = _safe_get_after_colon(line, 50) or line
-                match = re.search(r"[\w\-]{4,25}", rest)
+                match = re.search(r"[A-Za-z0-9\-]{4,25}", rest)
                 if match:
-                    out["chassis_no"] = match.group(0).strip()[:30]
-            # Make
+                    out["chassis_no"] = _valid_engine_chassis(match.group(0).strip()) or out["chassis_no"]
+            # Make (single word like Honda, Yamaha) – reject garbled OCR
             if "make" in line_lower and "year" not in line_lower:
                 val = _safe_get_after_colon(line, 50) or (lines[i + 1].strip()[:50] if i + 1 < len(lines) else None)
                 if val:
-                    out["make"] = val
+                    out["make"] = _valid_make(val) or out["make"]
             # Year model
             if "year" in line_lower and ("model" in line_lower or re.search(r"20\d{2}|19\d{2}", line)):
                 val = _safe_get_after_colon(line, 20) or (lines[i + 1].strip()[:20] if i + 1 < len(lines) else None)
-                if val:
-                    out["year_model"] = val
-                if not out["year_model"]:
-                    ym = re.search(r"20\d{2}|19\d{2}", line)
-                    if ym:
-                        out["year_model"] = ym.group(0)
+                out["year_model"] = _valid_year(val or line) or out["year_model"]
             # Body type
             if "body" in line_lower and "type" in line_lower:
                 val = _safe_get_after_colon(line, 40) or (lines[i + 1].strip()[:40] if i + 1 < len(lines) else None)
-                if val:
-                    out["body_type"] = val
-            # Piston displacement
+                if val and len(val) < 35 and val.lower() not in ("from cr", "e.g. sedan, motorcycle"):
+                    out["body_type"] = val.strip()[:40]
+            # Piston displacement: only accept plausible values (e.g. 110, 110cc)
             if "piston" in line_lower or "displacement" in line_lower:
                 val = _safe_get_after_colon(line, 30) or (lines[i + 1].strip()[:30] if i + 1 < len(lines) else None)
-                if val:
-                    out["piston_displacement"] = val
+                out["piston_displacement"] = _valid_piston(val or "") or _valid_piston(line) or out["piston_displacement"]
                 if not out["piston_displacement"]:
                     pd = re.search(r"[\d.]+\s*(?:cc|cm³|l|liter)", line_lower) or re.search(r"[\d.]+\s*cc", line_lower)
                     if pd:
-                        out["piston_displacement"] = pd.group(0).strip()[:30]
+                        out["piston_displacement"] = _valid_piston(pd.group(0)) or out["piston_displacement"]
             # Plate number
             if "plate" in line_lower or "mv file" in line_lower:
                 rest = _safe_get_after_colon(line, 30) or line
@@ -121,13 +180,39 @@ def extract_cr_fields(text):
                     break
             except Exception:
                 continue
+    # Reject placeholder-like or blocklisted values
+    if out.get("chassis_no"):
+        c = re.sub(r"\s+", "", str(out["chassis_no"]).lower())
+        if c in _ENGINE_CHASSIS_BLOCKLIST or out["chassis_no"].lower() in ("from cr", "from cr."):
+            out["chassis_no"] = None
+    if out.get("engine_no"):
+        e = re.sub(r"\s+", "", str(out["engine_no"]).lower())
+        if e in _ENGINE_CHASSIS_BLOCKLIST or out["engine_no"].lower() in ("from cr", "from cr."):
+            out["engine_no"] = None
+    if out.get("make") and not _valid_make(out["make"]):
+        out["make"] = None
+    # Fallback: year model anywhere (4-digit year)
+    if not out["year_model"]:
+        for line in lines:
+            ym = _valid_year(line)
+            if ym:
+                out["year_model"] = ym
+                break
+    # Fallback: piston displacement (digits + optional cc) anywhere
+    if not out["piston_displacement"]:
+        for line in lines:
+            pd = re.search(r"\b([\d.]+\s*(?:cc|cm³|l|liter)?)\b", line, re.I)
+            if pd:
+                v = _valid_piston(pd.group(1))
+                if v:
+                    out["piston_displacement"] = v
+                    break
     return out
 
 
 def extract_document_data(uploaded_image_path, doc_type):
     """
-    Run OCR on the uploaded image only (no reference) and return file_number, dates, and for CR extra fields.
-    For CR uses full OCR (both preprocessors) for better results on watermarked documents.
+    Extract document fields using pytesseract OCR. Returns file_number, dates, and for CR extra fields.
     """
     result = {
         "file_number": None,
@@ -143,12 +228,9 @@ def extract_document_data(uploaded_image_path, doc_type):
         "piston_displacement": None,
     }
     try:
-        # CR often has watermarks; use full OCR (fast=False) for both preprocessors and PSM configs
-        use_fast = doc_type != "CR"
-        text_or_path, _ = process_image(uploaded_image_path, save_results=False, fast=use_fast)
-        uploaded_text = (text_or_path or "") if text_or_path is not None else ""
-        uploaded_text = (uploaded_text or "").strip()
-        if not uploaded_text:
+        from app.utils.tesseract_ocr_utils import get_text_from_image
+        uploaded_text = get_text_from_image(uploaded_image_path)
+        if not uploaded_text or not uploaded_text.strip():
             return result
         if doc_type in ("OR", "CR"):
             try:
@@ -156,13 +238,13 @@ def extract_document_data(uploaded_image_path, doc_type):
                 if ref_result.get("is_valid"):
                     result["file_number"] = ref_result.get("file_number")
             except Exception as e:
-                print(f"extract_document_reference failed: {e}")
+                logger.debug("extract_document_reference failed: %s", e)
         try:
             dates = extract_dates(uploaded_text, doc_type)
             if dates:
                 result["dates"] = dates
         except Exception as e:
-            print(f"extract_dates failed: {e}")
+            logger.debug("extract_dates failed: %s", e)
         if doc_type == "CR":
             try:
                 cr = extract_cr_fields(uploaded_text)
@@ -177,42 +259,29 @@ def extract_document_data(uploaded_image_path, doc_type):
                     result["body_type"] = cr.get("body_type")
                     result["piston_displacement"] = cr.get("piston_displacement")
             except Exception as e:
-                print(f"extract_cr_fields failed: {e}")
+                logger.debug("extract_cr_fields failed: %s", e)
     except Exception as e:
-        print(f"extract_document_data failed: {e}")
+        logger.warning("extract_document_data failed: %s", e)
     return result
 
 
 def document_type(doc_type):
     """
-    Document type for the OCR processor. Return reference text based on document type.
+    Optional reference image path for document type. Used only for DL validation
+    (reference image is not read; validation uses OCR of uploaded image vs applicant data).
+    Returns None if DOC_REFERENCE_DIR is not set or reference file does not exist.
     """
-    import os
-    
-    # Normalize the document type (remove spaces and convert to uppercase)
     doc_type = doc_type.strip().upper()
-    
-    # Get base directory path
-    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    
-    # Define reference paths
-    reference_paths = {
-        "OR": os.path.join(base_path, "data_samples", "Testing/references/or_reference.jpg"),
-        "DL": os.path.join(base_path, "data_samples", "Testing/references/dl_reference.jpg"),
-        "CR": os.path.join(base_path, "data_samples", "Testing/references/cr_reference.png")
-    }
-    
-    # Check if document type is valid
-    if doc_type not in reference_paths:
+    ref_dir = os.getenv("DOC_REFERENCE_DIR", "").strip()
+    if not ref_dir:
         return None
-        
-    reference_path = reference_paths[doc_type]
-    
-    # Validate if reference file exists
-    if not os.path.exists(reference_path):
-        print(f"Warning: Reference file not found at {reference_path}")
+    names = {"OR": "or_reference.jpg", "DL": "dl_reference.jpg", "CR": "cr_reference.png"}
+    if doc_type not in names:
         return None
-        
+    reference_path = os.path.join(ref_dir, names[doc_type])
+    if not os.path.isfile(reference_path):
+        logger.debug("Reference file not found: %s", reference_path)
+        return None
     return reference_path
 
 def check_expiration(date_str, doc_type="OR"):
@@ -260,127 +329,68 @@ def check_expiration(date_str, doc_type="OR"):
         return False, "Invalid date format"
 
 def compare_credentials(reference_image_path, uploaded_image_path, text_array, show_results=True, save_results=True, doc_type="DL"):
-    """Compare credentials between reference and uploaded images"""
-    # Initialize default result structure
+    """Validate document using pytesseract OCR. reference_image_path unused."""
     result = {
         'is_valid': False,
         'image_valid': False,
         'text_valid': False,
         'date_valid': False,
         'date_message': "Not processed",
-        'image_similarity': 0.0,
+        'image_similarity': 1.0,
         'text_similarity': 0.0,
         'extracted_text': '',
-        'dates': {
-            'expiration_date': None,
-            'birth_date': None,
-            'other_dates': []
-        },
-        'file_number': None  # Changed from reference_number to file_number
+        'dates': {'expiration_date': None, 'birth_date': None, 'other_dates': []},
+        'file_number': None,
     }
-
     try:
-        # Process uploaded image first to get text
-        uploaded_text_path, _ = process_image(uploaded_image_path, save_results=save_results)
-        if save_results:
-            uploaded_text = get_text_from_file(uploaded_text_path) if uploaded_text_path else ""
-        else:
-            uploaded_text = (uploaded_text_path or "") if uploaded_text_path is not None else ""
+        from app.utils.tesseract_ocr_utils import get_text_from_image
+        uploaded_text = get_text_from_image(uploaded_image_path)
+        result["extracted_text"] = uploaded_text
+        is_image_valid = bool(uploaded_text and uploaded_text.strip())
 
-        # Extract file number first for OR and CR
         if doc_type in ["OR", "CR"]:
             ref_result = extract_document_reference(uploaded_text, doc_type)
-            
-            if ref_result["is_valid"]:
+            if ref_result.get("is_valid"):
                 result["file_number"] = ref_result["file_number"]
-                if show_results:
-                    print(f"\n=[ Document File Number ]=")
-                    print(f"Type: {doc_type}")
-                    print(f"Number: {ref_result['file_number']}")
-            else:
-                if show_results:
-                    print(f"\nWarning: {ref_result['error']}")
-
-        # Image comparison
-        is_image_valid, image_similarity = compare_images(
-            reference_image_path, 
-            uploaded_image_path, 
-            threshold=0.7,
-            validate_func=validate_credentials,
-            show_results=show_results,
-            save_results=save_results
-        )
-        
-        if show_results:
-            print(f"\n=[ Image Comparison Results ]=")
-            percentage = image_similarity * 100  
-            print(f"Similarity: {image_similarity:.1f}")
-            print(f"Accuracy: {percentage:.1f}%")
-            print(f"Passes threshold: {'Yes' if is_image_valid else 'No'}")
-
-        # For OR/CR: validate only by extracted file number (OR file no. / MV file no.), not plate (plate may be temporary)
-        if doc_type in ["OR", "CR"]:
             is_text_valid = bool(result.get("file_number"))
             text_similarity = 1.0 if is_text_valid else 0.0
             if show_results:
-                print(f"\n=[ OR/CR File Number Validation ]=")
-                print(f"Type: {doc_type} – validated by file number only (plate not matched)")
-                print(f"Valid: {'Yes' if is_text_valid else 'No'}")
+                logger.debug("OR/CR file number validation type=%s valid=%s", doc_type, is_text_valid)
         else:
-            # DL: match applicant details (name, birth date) from step 1
             is_text_valid, text_similarity = compare_text_array(
-                text_array, 
-                uploaded_text, 
-                threshold=0.85,
-                doc_type=doc_type,
-                show_results=show_results
+                text_array, uploaded_text, threshold=0.85, doc_type=doc_type, show_results=show_results
             )
 
-        # Date extraction and validation
         dates = extract_dates(uploaded_text, doc_type)
-        is_date_valid, date_message = check_expiration(dates['expiration_date'], doc_type)
+        if dates:
+            result["dates"] = dates
+        is_date_valid, date_message = check_expiration(result["dates"].get("expiration_date"), doc_type)
 
-        # For CR documents, we need to update overall validation differently
         if doc_type == "CR":
-            # Only use image and text validation for CR documents (ignore date validation)
             overall_valid = is_image_valid and is_text_valid
         else:
-            # For other documents, include date validation
             overall_valid = is_image_valid and is_text_valid and is_date_valid
 
-        # Update result with all values
         result.update({
-            'is_valid': overall_valid, 
+            'is_valid': overall_valid,
             'image_valid': is_image_valid,
             'text_valid': is_text_valid,
             'date_valid': is_date_valid,
             'date_message': date_message,
-            'image_similarity': image_similarity,
             'text_similarity': text_similarity,
-            'extracted_text': uploaded_text,
-            'dates': dates
         })
-
     except Exception as e:
-        print(f"Error in compare_credentials: {str(e)}")
-        
+        logger.warning("compare_credentials failed: %s", e)
     return result
 
-def process_image_with_validation(image_path, reference_text, show_results=True):
+def process_image_with_validation(image_path, reference_text, show_results=True, doc_type="DL"):
     """
-    Process an image using OCR and validate the extracted text against reference credentials.
-
-    Args:
-        image_path (str): Path to the image file.
-        reference_text (str): Reference credentials for validation.
-        show_results (bool): Whether to show validation results.
-
-    Returns:
-        dict: Validation results containing boolean flags and scores
+    Process an image using pytesseract and validate extracted text against reference credentials.
     """
-    text_output_path, annotated_image_path = process_image(image_path)
-    
-    if not text_output_path:
+    from app.utils.text_ocr_utils import validate_credentials
+    from app.utils.tesseract_ocr_utils import get_text_from_image
+    extracted_text = get_text_from_image(image_path)
+    if not extracted_text or not extracted_text.strip():
         return {
             'is_valid': False,
             'text_valid': False,
@@ -390,24 +400,15 @@ def process_image_with_validation(image_path, reference_text, show_results=True)
             'text_output_path': None,
             'annotated_image_path': None
         }
-    
-    # Read the extracted text
-    extracted_text = get_text_from_file(text_output_path)
-    
-    # Validate credentials
+    dates = extract_dates(extracted_text, doc_type) or {}
     is_text_valid, text_similarity = validate_credentials(extracted_text, reference_text, threshold=0.85)
-    
-    # Extract and validate dates
-    dates = extract_dates(extracted_text)
-    is_date_valid, date_message = check_expiration(dates['expiration_date'])
+    is_date_valid, date_message = check_expiration(dates.get("expiration_date"), doc_type)
 
     if show_results:
-        print("\n=== Document Validation Results ===")
-        print(f"Text validation: {'Passed' if is_text_valid else 'Failed'}")
-        print(f"Text similarity: {text_similarity:.2f}")
-        print(f"Date validation: {'Passed' if is_date_valid else 'Failed'}")
-        print(f"Date status: {date_message}")
-        print("==============================\n")
+        logger.debug(
+            "Document validation text_valid=%s similarity=%.2f date_valid=%s message=%s",
+            is_text_valid, text_similarity, is_date_valid, date_message
+        )
 
     return {
         'is_valid': is_text_valid and is_date_valid,
@@ -416,6 +417,6 @@ def process_image_with_validation(image_path, reference_text, show_results=True)
         'text_similarity': text_similarity,
         'date_message': date_message,
         'dates': dates,
-        'text_output_path': text_output_path,
-        'annotated_image_path': annotated_image_path
+        'text_output_path': None,
+        'annotated_image_path': None
     }

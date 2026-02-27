@@ -26,6 +26,10 @@ from app.db.models.batch_sticker_sessions import BatchStickerSessions
 from app.utils.email import send_payment_slip_email  
 import random 
 from app.utils.application_utils import cleanup_stale_applications
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class ApplicantController:
     def __init__(self, db: AsyncSession):
@@ -45,13 +49,9 @@ class ApplicantController:
         try:
             # Run cleanup first
             deleted_count = await cleanup_stale_applications(self.db)
-            print(f"Cleanup completed: {deleted_count} stale applications removed")
-            
-            # Log the current datetime with timezone information
+            if deleted_count:
+                logger.info("Cleanup completed: %s stale applications removed", deleted_count)
             now_datetime = datetime.now()
-            print(f"Application creation timestamp: {now_datetime} (full datetime)")
-            print(f"Date only value being stored: {now_datetime.date()}")
-            print(f"Server timezone information: {datetime.now().astimezone().tzinfo}")
             
             current_date = datetime.now().date()
             
@@ -148,7 +148,10 @@ class ApplicantController:
                     total_amount=estimated_price,
                 )
                 if not slip_sent:
-                    print(f"Warning: Gatepass slip email was not sent to applicant user_id={user_id}, application_id={application.application_id}. Check server logs and EMAIL_* env vars.")
+                    logger.warning(
+                        "Gatepass slip email not sent to applicant user_id=%s application_id=%s. Check EMAIL_* env.",
+                        user_id, application.application_id,
+                    )
 
                 # Format response with both application and driver details
                 result = {
@@ -237,7 +240,7 @@ class ApplicantController:
             return 500.00
             
         except Exception as e:
-            print(f"Error getting sticker price: {str(e)}")
+            logger.warning("Error getting sticker price: %s", e)
             # Return a reasonable default if there's an error
             return 500.00
 
@@ -392,7 +395,7 @@ class ApplicantController:
             return formatted_vehicles
 
         except Exception as e:
-            print(f"Error in get_user_vehicles: {str(e)}")  # Add logging for debugging
+            logger.exception("Error in get_user_vehicles: %s", e)
             raise HTTPException(status_code=400, detail=str(e))
 
     async def get_authorized_drivers(self, user_id: UUID):
@@ -448,7 +451,7 @@ class ApplicantController:
             return formatted_drivers
 
         except Exception as e:
-            print(f"Error in get_authorized_drivers: {str(e)}")  # Add logging for debugging
+            logger.exception("Error in get_authorized_drivers: %s", e)
             raise HTTPException(status_code=400, detail=str(e))
 
     async def get_vehicle_image(self, plate_no: str, image_type: str, user_id: UUID):
@@ -780,7 +783,7 @@ class ApplicantController:
         except HTTPException as he:
             raise he
         except Exception as e:
-            print(f"Error in get_approved_applications: {str(e)}")
+            logger.exception("Error in get_approved_applications: %s", e)
             raise HTTPException(status_code=400, detail=str(e))
 
     async def get_application_by_id(self, application_id: int, user_id: UUID):
@@ -934,7 +937,7 @@ class ApplicantController:
         except HTTPException as he:
             raise he
         except Exception as e:
-            print(f"Error in get_application_by_id: {str(e)}")
+            logger.exception("Error in get_application_by_id: %s", e)
             raise HTTPException(status_code=400, detail=(str(e)))
 
     async def request_email_verification(self, email: str, user_id: UUID) -> dict:
@@ -994,6 +997,18 @@ class ApplicantController:
                 detail=f"Failed to send OTP: {str(e)}"
             )
 
+    async def verify_email_otp(self, user_id: UUID, otp: str) -> dict:
+        """Verify email OTP only (no profile update). Used by application flow."""
+        valid_token = await get_valid_verification_token(self.db, user_id, otp)
+        if not valid_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired OTP"
+            )
+        await delete_used_token(self.db, valid_token.token_id)
+        await self.db.commit()
+        return {"message": "Email verified successfully"}
+
     async def verify_and_update_profile(
         self,
         first_name: str,
@@ -1007,18 +1022,14 @@ class ApplicantController:
         image_data: Optional[bytes],
         user_id: UUID
     ) -> dict:
-        """Verify email OTP and update profile"""
-        # Verify OTP
+        """Verify email OTP and update profile. For use only in Profile / update profile section."""
         valid_token = await get_valid_verification_token(self.db, user_id, otp)
         if not valid_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired OTP"
             )
-        
-        # Delete used token
         await delete_used_token(self.db, valid_token.token_id)
-        
         try:
             # Check if email already exists for another user
             if email:
@@ -1287,7 +1298,7 @@ class ApplicantController:
             raise he
         except Exception as e:
             await self.db.rollback()
-            print(f"Error in update_application: {str(e)}")
+            logger.exception("Error in update_application: %s", e)
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to update application: {str(e)}"
@@ -1330,7 +1341,7 @@ class ApplicantController:
             raise he
         except Exception as e:
             await self.db.rollback()
-            print(f"Error in delete_assigned_driver: {str(e)}")
+            logger.exception("Error in delete_assigned_driver: %s", e)
             raise HTTPException(status_code=400, detail=str(e))
 
     async def delete_driver_from_application(self, application_id: int, driver_id: int, user_id: UUID):
@@ -1392,7 +1403,7 @@ class ApplicantController:
             raise he
         except Exception as e:
             await self.db.rollback()
-            print(f"Error in delete_driver_from_application: {str(e)}")
+            logger.exception("Error in delete_driver_from_application: %s", e)
             raise HTTPException(status_code=400, detail=str(e))
 
     async def submit_specific_applications_to_pending(
@@ -1547,7 +1558,10 @@ class ApplicantController:
                 total_amount=total_amount,
             )
             if not slip_sent:
-                print(f"Warning: Gatepass slip email was not sent after submit (user_id={user_id}, slip_id={slip.slip_id}). Check server logs and EMAIL_* env vars.")
+                logger.warning(
+                    "Gatepass slip email not sent after submit user_id=%s slip_id=%s. Check EMAIL_* env.",
+                    user_id, slip.slip_id,
+                )
 
             return {
                 "message": f"Successfully submitted {len(submitted_apps)} applications",
@@ -1561,7 +1575,7 @@ class ApplicantController:
             raise he
         except Exception as e:
             await self.db.rollback()
-            print(f"Error in submit_specific_applications: {str(e)}")
+            logger.exception("Error in submit_specific_applications: %s", e)
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to submit applications: {str(e)}"

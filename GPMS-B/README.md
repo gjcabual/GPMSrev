@@ -1,86 +1,82 @@
-# FastAPI Gate Pass Management System
+# GPMS-B – Backend (FastAPI)
 
-This project is a Vehicle Pass Authorization Management System designed to streamline campus access control. It manages and organizes vehicle registration data and access applications within the campus infrastructure. The system leverages Optical Character Recognition (OCR) technology to automatically validate and match information from applicant submissions, ensuring efficient and accurate processing of vehicle pass requests.
+Backend for the Gate Pass Management System. Handles auth (JWT), applicant applications, document extraction (OCR via **pytesseract**), management, staff, admin, and reports.
 
-## Project Setup
+## Prerequisites
 
-### Prerequisites
+- **Python 3.10+** (3.11 recommended)
+- **PostgreSQL 12+**
+- **Tesseract OCR** – required for document extraction. Install the binary; see [Tesseract for Windows](https://github.com/UB-Mannheim/tesseract/wiki) or your OS package manager.
 
-- **Python 3.8+**: Make sure you have Python installed. You can download it from [python.org](https://www.python.org/downloads/).
-- **Virtual Environment**: It’s recommended to create a virtual environment for this project.
-- **Database**: This project requires a database setup (e.g., PostgreSQL, MySQL, etc.). Make sure to have it installed and configured.
+## Setup
 
-### 1. Clone the Repository
-
-Start by cloning this repository and navigating to the project directory:
+### 1. Clone and enter project
 
 ```bash
-git clone <repository_url>
-cd project_directory
+cd GPMS-B
 ```
 
-### 2. Create and Activate a Virtual Environment
-
-Create a virtual environment to manage dependencies:
+### 2. Virtual environment
 
 ```bash
 python -m venv .venv
 ```
 
-Activate the virtual environment:
-Windows:
+Activate:
 
-```Bash
-.venv\Scripts\activate
-```
+- **Windows:** `.venv\Scripts\activate`
+- **macOS/Linux:** `source .venv/bin/activate`
 
-### 3. Install Dependencies
-
-Install the project dependencies by running:
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure Database
+### 4. Environment
 
-1. Create a new PostgreSQL database named `dbgpms`:
+Copy **.env.example** to **.env** and set:
 
-```sql
-CREATE DATABASE dbgpms;
-```
+- **Database:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` (database name used by seed: `gpmsdb`)
+- **Optional:** `TESSERACT_CONFIG` for Tesseract (e.g. `--psm 6`)
+- **Optional (email):** `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT` for OTP, password reset, staff invite
 
-2. Set your DATABASE_URL in the format:
+### 5. Database
 
-```bash
-postgresql+asyncpg://username:password@localhost/dbgpms
-```
+1. Create the database:
 
-3. Run the server to create tables:
+   ```sql
+   CREATE DATABASE gpmsdb;
+   ```
 
-```bash
-uvicorn main:app --reload
-```
+2. Start the app once so tables are created:
 
-4. Seed the database with initial data:
+   ```bash
+   uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   ```
 
-```bash
-python -m app.utils.seed_db --action seed
-```
+3. Seed initial data (admin, staff, applicant):
 
-> **Note**: Make sure your database server is running before executing these commands.
+   ```bash
+   python -m app.utils.seed_db --action seed
+   ```
 
-### 5. Run the Application
-
-Start the FastAPI application using Uvicorn:
+### 6. Run
 
 ```bash
-uvicorn main:app --reload
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Deactivating the Virtual Environment
+- API: http://127.0.0.1:8000  
+- Docs: http://127.0.0.1:8000/docs  
 
-Once done, you can deactivate the virtual environment with:
+## OCR (document extraction)
+
+- **Technology:** **pytesseract** (Tesseract binary must be installed and on PATH).
+- **Usage:** `extract_document_data()` in `app/utils/document_ocr_utils.py` uses `app/utils/tesseract_ocr_utils.py` for OR, CR, and DL.
+- **Test script:** `python scripts/test_openrouter.py [image_path] [OR|CR|DL]`
+
+## Deactivate venv
 
 ```bash
 deactivate

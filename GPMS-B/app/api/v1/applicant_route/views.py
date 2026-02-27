@@ -151,6 +151,10 @@ class ApplicantView:
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+    async def verify_email_otp(self, user_id: UUID, otp: str) -> dict:
+        """Verify email OTP only (no profile update). For application flow."""
+        return await self.controller.verify_email_otp(user_id=user_id, otp=otp)
+
     async def verify_and_update_profile(
         self,
         first_name: str,
@@ -164,7 +168,7 @@ class ApplicantView:
         image_data: Optional[bytes],
         user_id: UUID
     ):
-        """Verify email OTP and update profile"""
+        """Verify email OTP and update profile. For Profile / update profile section only."""
         try:
             return await self.controller.verify_and_update_profile(
                 first_name=first_name,

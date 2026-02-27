@@ -1,6 +1,9 @@
+import re
+import logging
 from difflib import SequenceMatcher
 from app.utils.common_utils import get_text_from_file
-import re
+
+logger = logging.getLogger(__name__)
 
 
 def validate_credentials(extracted_text, reference_text, threshold):
@@ -79,20 +82,7 @@ def compare_text_array(text_array, uploaded_text, threshold, doc_type="DL", show
     matches = 0
     
     if show_results:
-        print(f"\n=[ Text Comparison Results for {doc_type} ]=")
-        print(f"Required fields for {doc_type}:")
-        
-        # Print expected fields based on document type
-        field_descriptions = {
-            'DL': ['First Name', 'Last Name', 'Birth Date'],
-            'OR': ['File number only (plate not matched)'],
-            'CR': ['MV file number only (plate not matched)'],
-        }
-
-        for field in field_descriptions.get(doc_type, []):
-            print(f"- {field}")
-        
-        print("\n=[ Individual field comparisons: ]=")
+        logger.debug("Text comparison for doc_type=%s", doc_type)
     
     # Process each field or field-part (DL only; OR/CR handled above)
     index = 0
@@ -111,7 +101,7 @@ def compare_text_array(text_array, uploaded_text, threshold, doc_type="DL", show
                     best_similarity = similarity
         
         if show_results:
-            print(f"'{text}' match score: {best_similarity:.2f}")
+            logger.debug("Field '%s' match score: %.2f", text, best_similarity)
         
         # Only calculate total similarity for original number of fields
         if index < len(text_array):
@@ -124,8 +114,7 @@ def compare_text_array(text_array, uploaded_text, threshold, doc_type="DL", show
     overall_similarity = total_similarity / len(text_array) if text_array else 0
     
     if show_results:
-        print(f"\nOverall {doc_type} similarity: {overall_similarity:.2f}")
-        print(f"Validation {'Passed' if overall_similarity >= threshold else 'Failed'}")
+        logger.debug("Overall %s similarity: %.2f passed=%s", doc_type, overall_similarity, overall_similarity >= threshold)
     
     return overall_similarity >= threshold, overall_similarity
 
@@ -196,6 +185,6 @@ def extract_document_reference(text: str, doc_type: str) -> dict:
 
     except Exception as e:
         result["error"] = f"Error processing {doc_type} file number: {str(e)}"
-        print(f"Exception in extract_document_reference: {str(e)}")
+        logger.debug("extract_document_reference failed: %s", e)
 
     return result
