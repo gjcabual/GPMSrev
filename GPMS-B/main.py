@@ -28,6 +28,7 @@ from app.api.v1.management_route.reports import routes as reports_routes
 from app.api.v1.staff_route.route import router as staff_application_router  
 from app.api.v1.applicant_route import routes as applicant_application_routes 
 from app.api.v1.management_route.appliant_logs.route import router as applicant_logs_router  
+from app.routes.ocr import router as ocr_router
 
 app = FastAPI(title="GPMS-Backend System", version="1.0.0")
 
@@ -101,6 +102,8 @@ app.include_router(
     prefix="/api/v1", 
     tags=["applicant"]
 )
+
+app.include_router(ocr_router, prefix="/api/v1/ocr", tags=["ocr"])
 
 # For development purposes only - remove in production
 # Vehicle routes
