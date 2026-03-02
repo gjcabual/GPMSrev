@@ -118,7 +118,6 @@ export const ApplicationReview = ({
  const [data, setData] = useState(null);
  const [loading, setLoading] = useState(true);
  const [confirmed, setConfirmed] = useState(false);
- const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
  const { id } = useParams();
 
@@ -239,74 +238,7 @@ export const ApplicationReview = ({
            >
             Continue
            </button>
-           <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="bg-red-500 hover:bg-red-600 transition-colors text-white h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium"
-           >
-            Delete
-           </button>
           </div>
-
-          {showDeleteConfirm && (
-           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-4 sm:p-6 rounded-lg shadow-lg w-full max-w-md">
-             <div className="flex items-center justify-between mb-3 sm:mb-4">
-              <h3 className="text-base sm:text-lg font-medium text-gray-900">
-               Delete Application
-              </h3>
-              <button
-               onClick={() => setShowDeleteConfirm(false)}
-               className="text-gray-500 hover:text-gray-700"
-              >
-               <IoCloseCircle size={20} className="sm:size-6" />
-              </button>
-             </div>
-             <p className="mb-3 sm:mb-4 text-sm sm:text-base text-gray-700">
-              Are you sure you want to delete this application? This action
-              cannot be undone.
-             </p>
-
-             <div className="mb-3 sm:mb-4 flex items-start">
-              <input
-               type="checkbox"
-               id="confirm-delete"
-               className="mt-1 accent-primary h-4 w-4"
-               checked={confirmed}
-               onChange={() => setConfirmed(!confirmed)}
-              />
-              <label
-               htmlFor="confirm-delete"
-               className="ml-2 text-xs sm:text-sm text-gray-700"
-              >
-               I confirm that I have reviewed and agree that the data entered is
-               accurate and complete.
-              </label>
-             </div>
-
-             <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-              <button
-               onClick={() => setShowDeleteConfirm(false)}
-               className="bg-gray-300 hover:bg-gray-400 px-3 sm:px-4 py-1.5 sm:py-2 rounded text-sm sm:text-base text-gray-800"
-              >
-               Cancel
-              </button>
-              <button
-               onClick={handleDelete}
-               disabled={!confirmed}
-               className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded text-sm sm:text-base text-white ${
-                confirmed
-                 ? "bg-red-500 hover:bg-red-600"
-                 : "bg-red-300 cursor-not-allowed"
-               }`}
-              >
-               <span className="flex items-center gap-1">
-                <span>Delete Application By ID</span>
-               </span>
-              </button>
-             </div>
-            </div>
-           </div>
-          )}
 
           <div className="mt-3 sm:mt-5 flex items-center justify-center gap-1">
            <input

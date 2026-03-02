@@ -956,7 +956,9 @@ export const ApplicationLog = ({
                 : selectedItem?.status === "Rejected"
                 ? "bg-red-100 text-red-800"
                 : selectedItem?.status === "Pending"
-                ? "bg-yellow-100 text-yellow-800"
+                ? "bg-orange-100 text-orange-700"
+                : selectedItem?.status === "Waiting for approval"
+                ? "bg-lime-100 text-lime-700"
                 : "bg-blue-100 text-blue-800"
               }`}
              >
@@ -1006,7 +1008,9 @@ export const ApplicationLog = ({
               : item?.status === "Rejected"
               ? "bg-red-100 text-red-800"
               : item?.status === "Pending"
-              ? "bg-yellow-100 text-yellow-800"
+              ? "bg-orange-100 text-orange-700"
+              : item?.status === "Waiting for approval"
+              ? "bg-lime-100 text-lime-700"
               : "bg-blue-100 text-blue-800"
             }`}
            >

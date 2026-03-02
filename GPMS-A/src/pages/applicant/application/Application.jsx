@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { IoMdCloudUpload } from "react-icons/io";
-import { VerifyModal } from "../../../components/applicant/VerifyModal";
 import { buildUrl } from "../../../utils/buildUrl";
 import * as psgcApi from "../../../utils/psgcApi";
 import { toast } from "sonner";
@@ -54,8 +53,6 @@ export const Application = () => {
  const nav = useNavigate();
  const [selected, setSelected] = useState("Employee Parking");
  const [currentStep, setCurrentStep] = useState(0);
- const [isVerifying, setIsVerifying] = useState(false);
- const [status, setStatus] = useState(null);
  const [profileEmail, setProfileEmail] = useState("");
  const [isRequestingOTP, setIsRequestingOTP] = useState(false);
  const [profileData, setProfileData] = useState(null);
@@ -117,14 +114,62 @@ export const Application = () => {
 
  // Update vehicleData when vehicleFormData changes
  useEffect(() => {
-  if (
-   vehicleFormData.plate_no &&
-   vehicleFormData.model &&
-   vehicleFormData.brand
-  ) {
-   setVehicleData(vehicleFormData);
+  const userPlate = (vehicleFormData.plate_no ?? "").trim();
+  const plateOk =
+   userPlate !== "" || confirmedDocDetails.cr_plate_number_blank_or_temp;
+
+  if (plateOk && vehicleFormData.model && vehicleFormData.brand) {
+   // If the user provided a plate number, always keep it;
+   // the "blank or temporary" flag only controls auto-fill behavior from CR.
+   setVehicleData({
+    ...vehicleFormData,
+    plate_no: userPlate,
+   });
   }
- }, [vehicleFormData]);
+ }, [vehicleFormData, confirmedDocDetails.cr_plate_number_blank_or_temp]);
+
+ // Prefill plate number from submitted CR details (Step 4 / Vehicle Information)
+ useEffect(() => {
+  if (currentStep !== 3) return;
+  setVehicleFormData((prev) => {
+   const isTemp = !!confirmedDocDetails.cr_plate_number_blank_or_temp;
+   // If CR plate is blank/temporary, do NOT auto-clear or override the user's input;
+   // simply skip auto-fill and let the user type a new plate number.
+   if (isTemp) {
+    return prev;
+   }
+   const submitted = (confirmedDocDetails.cr_plate_number ?? "").trim();
+   if (!submitted) return prev;
+   if ((prev.plate_no ?? "").trim() !== "") return prev;
+   return { ...prev, plate_no: submitted };
+  });
+ }, [
+  currentStep,
+  confirmedDocDetails.cr_plate_number,
+  confirmedDocDetails.cr_plate_number_blank_or_temp,
+  setVehicleFormData,
+ ]);
+
+// Prefill brand and vehicle type from CR (Step 4 / Vehicle Information)
+useEffect(() => {
+ if (currentStep !== 3) return;
+ setVehicleFormData((prev) => {
+  const next = { ...prev };
+  const crMake = (confirmedDocDetails.cr_make ?? "").trim();
+  if (!next.brand && crMake) {
+   next.brand = crMake;
+  }
+  const crBody = (confirmedDocDetails.cr_body_type ?? "").trim();
+  if (!next.vehicle_type && crBody) {
+   if (crBody === "Motorcycle") next.vehicle_type = "Motorcycle";
+   else if (crBody === "Truck") next.vehicle_type = "Truck";
+   else if (crBody === "Van") next.vehicle_type = "Van";
+   else if (crBody === "Tricycle") next.vehicle_type = "Tricycle";
+   else next.vehicle_type = "Car";
+  }
+  return next;
+ });
+}, [currentStep, confirmedDocDetails.cr_make, confirmedDocDetails.cr_body_type, setVehicleFormData]);
 
  const renderStepContent = () => {
   switch (currentStep) {
@@ -204,11 +249,22 @@ export const Application = () => {
    return;
   }
 
+  // Only check if OR and CR file numbers match (normalized)
+  const normalizeFileNumber = (v) =>
+   String(v ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, "");
+  const orNo = normalizeFileNumber(confirmedDocDetails.or_file_number);
+  const crNo = normalizeFileNumber(confirmedDocDetails.cr_file_number);
+  if (orNo && crNo && orNo !== crNo) {
+   toast.error("OR and CR file numbers must match.");
+   return;
+  }
+
   try {
    setIsSubmitting(true);
    setHasApiError(false);
-   setIsVerifying(true); // Show verify modal immediately when starting submission
-   setStatus(null); // Reset status
 
    const formData = new FormData();
 
@@ -259,13 +315,33 @@ export const Application = () => {
    formData.append("doc_exp_dates", expDateString);
    formData.append("doc_types", "OR,CR,DL");
 
-   if (confirmedDocDetails.or_file_number && confirmedDocDetails.cr_file_number &&
-       confirmedDocDetails.or_expiration && confirmedDocDetails.dl_expiration) {
-    formData.append("confirmed_or_file_number", confirmedDocDetails.or_file_number);
-    formData.append("confirmed_cr_file_number", confirmedDocDetails.cr_file_number);
-    formData.append("confirmed_or_expiration", confirmedDocDetails.or_expiration);
-    formData.append("confirmed_dl_expiration", confirmedDocDetails.dl_expiration);
-   }
+  if (confirmedDocDetails.or_file_number && confirmedDocDetails.cr_file_number &&
+      confirmedDocDetails.or_expiration && confirmedDocDetails.dl_expiration) {
+   // Backend expects OR expiration as MM/YYYY, but the month input value is typically YYYY-MM.
+   const normalizeMonthToMMYYYY = (value) => {
+    if (!value) return "";
+    const s = String(value).trim();
+    if (/^\d{2}\/\d{4}$/.test(s)) return s; // MM/YYYY
+    if (/^\d{4}-\d{2}$/.test(s)) {
+     const [yyyy, mm] = s.split("-");
+     return `${mm}/${yyyy}`;
+    }
+    if (/^\d{4}\/\d{2}$/.test(s)) {
+     const [yyyy, mm] = s.split("/");
+     return `${mm.padStart(2, "0")}/${yyyy}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+     const [yyyy, mm] = s.split("-");
+     return `${mm}/${yyyy}`;
+    }
+    return s; // fallback; backend will validate
+   };
+
+   formData.append("confirmed_or_file_number", confirmedDocDetails.or_file_number);
+   formData.append("confirmed_cr_file_number", confirmedDocDetails.cr_file_number);
+   formData.append("confirmed_or_expiration", normalizeMonthToMMYYYY(confirmedDocDetails.or_expiration));
+   formData.append("confirmed_dl_expiration", confirmedDocDetails.dl_expiration);
+  }
 
    // Add document files
    if (documentFilesRef.or) formData.append("doc_files", documentFilesRef.or);
@@ -285,14 +361,12 @@ export const Application = () => {
    if (applicationResponse.status === 400) {
     const msg = typeof applicationData.detail === "string" ? applicationData.detail : applicationData.detail?.message || "Please check your input and try again.";
     toast.error(msg, { duration: 5000 });
-    setStatus("error");
     setHasApiError(true);
     return;
    }
 
    if (!applicationResponse.ok) {
     setHasApiError(true);
-    setStatus("error");
     throw new Error(
      applicationData.detail?.message || "Failed to submit application"
     );
@@ -328,7 +402,6 @@ export const Application = () => {
     }
    }
 
-   setStatus("success");
    toast.success("Application submitted successfully!");
 
    // Navigate after a short delay
@@ -343,7 +416,6 @@ export const Application = () => {
     error.message || "Failed to submit application. Please try again."
    );
    setHasApiError(true);
-   setStatus("error");
   } finally {
    setIsSubmitting(false);
   }
@@ -465,7 +537,8 @@ export const Application = () => {
     setHasApiError(false);
     const vehicleFormData = new FormData();
 
-    vehicleFormData.append("plate_no", vehicleData.plate_no);
+    // Always send plate_no so backend Form(...) field is present
+    vehicleFormData.append("plate_no", vehicleData.plate_no ?? "");
     vehicleFormData.append("model", vehicleData.model);
     vehicleFormData.append("brand", vehicleData.brand);
     vehicleFormData.append("vehicle_type", vehicleData.vehicle_type);
@@ -518,9 +591,31 @@ export const Application = () => {
 
     if (!vehicleResponse.ok) {
      setHasApiError(true);
-     throw new Error(
-      responseData.detail || "Failed to submit vehicle information"
-     );
+     // Normalize backend error detail so we never show "[object Object]"
+     let message = "Failed to submit vehicle information";
+     const detail = responseData?.detail;
+     if (typeof detail === "string") {
+      message = detail;
+     } else if (Array.isArray(detail) && detail.length > 0) {
+      // FastAPI / Pydantic validation errors list
+      const first = detail[0];
+      const loc = first?.loc;
+      const field = Array.isArray(loc) ? loc[loc.length - 1] : undefined;
+      if (first?.msg && field) {
+       message = `${field.replace(/_/g, " ")}: ${first.msg}`;
+      } else if (first?.msg) {
+       message = first.msg;
+      } else {
+       message = JSON.stringify(detail);
+      }
+     } else if (detail && typeof detail === "object") {
+      message =
+       detail.message ||
+       detail.error ||
+       detail.msg ||
+       JSON.stringify(detail);
+     }
+     throw new Error(message);
     }
 
     toast.success("Vehicle information saved successfully");
@@ -644,17 +739,7 @@ export const Application = () => {
      </div>
     )}
    </div>
-   {/* Single VerifyModal for the entire application */}
-   {isVerifying && (
-    <VerifyModal
-     status={status}
-     onClose={() => {
-      setIsVerifying(false);
-      setStatus(null);
-      setHasApiError(false);
-     }}
-    />
-   )}
+  {/* Removed submit VerifyModal; only file-number match is validated on submit */}
   </>
  );
 };
@@ -2312,6 +2397,12 @@ const fileInputRef = useRef(null);
   const pd = extractedPayloadRef.current || pendingExtractedData?.payload || pendingExtractedData;
   const effective = (key) => {
    const m = modalForm[key];
+   // For plate_number, treat an explicitly cleared value ("") as the final value
+   if (key === "plate_number") {
+    if (m != null) return String(m).trim();
+    const p = pd && pd[key];
+    return p != null && p !== "" ? String(p).trim() : "";
+   }
    if (m != null && String(m).trim() !== "") return String(m).trim();
    const p = pd && pd[key];
    return p != null && p !== "" ? String(p).trim() : "";
@@ -2343,7 +2434,9 @@ const fileInputRef = useRef(null);
     cr_date: effective("date") || prev.cr_date,
     cr_owner_name: effective("owner_name") || prev.cr_owner_name,
     cr_owner_address: effective("owner_address") || prev.cr_owner_address,
-    cr_plate_number: modalForm.plate_number_blank_or_temp ? "" : (effective("plate_number") || prev.cr_plate_number),
+    cr_plate_number: modalForm.plate_number_blank_or_temp
+     ? ""
+     : (modalForm.plate_number ?? "").trim(),
     cr_plate_number_blank_or_temp: modalForm.plate_number_blank_or_temp ?? prev.cr_plate_number_blank_or_temp,
     cr_make: (modalForm.make === "Other" && (modalForm.make_other ?? "").trim()) ? modalForm.make_other.trim() : (effective("make") || prev.cr_make),
     cr_year_model: effective("year_model") || prev.cr_year_model,
@@ -2489,12 +2582,14 @@ const fileInputRef = useRef(null);
          const hasExtractedData = pd && (modalDocType === "CR"
           ? (pd.file_number || pd.owner_name || pd.plate_number || pd.year_model || pd.piston_displacement)
           : (pd.file_number || pd.expiration_date));
-         const f = (key) => {
-          const v = modalForm[key];
-          if (v != null && String(v).trim() !== "") return String(v).trim();
-          const p = pd && pd[key];
-          return p != null && p !== "" ? String(p).trim() : "";
-         };
+        const f = (key) => {
+         const v = modalForm[key];
+         // If the user has typed anything (including an empty string), always prefer it.
+         // Only fall back to extracted payload when the modalForm field is truly undefined.
+         if (v !== undefined) return String(v ?? "").trim();
+         const p = pd && pd[key];
+         return p != null && p !== "" ? String(p).trim() : "";
+        };
          return (
           <>
         <p className="text-sm font-medium text-gray-700">
@@ -2587,50 +2682,6 @@ const fileInputRef = useRef(null);
            />
           </div>
           <div>
-           <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
-           <select
-            value={f("make")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, make: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
-           >
-            <option value="">Select make/brand</option>
-            {(() => {
-            const makes = [
-             // Common car brands
-             "Toyota", "Honda", "Nissan", "Mitsubishi", "Ford", "Isuzu", "Hyundai", "Kia", "Suzuki",
-             "Mazda", "Chevrolet", "Fuso", "Hino", "Foton", "JAC", "BMW", "Mercedes-Benz", "Audi",
-             "Volkswagen", "Subaru",
-             // Common motorcycle brands
-             "Yamaha", "Kawasaki", "KTM", "Rusi", "Skygo", "Motorstar", "Bajaj", "TVS", "Vespa",
-             "Royal Enfield", "Kymco", "SYM", "Keeway",
-             "Other",
-            ];
-             const current = f("make");
-             const hasOther = current && !makes.includes(current);
-             return (
-              <>
-               {makes.map((m) => (
-                <option key={m} value={m}>{m}</option>
-               ))}
-               {hasOther && <option value={current}>{current} (from document)</option>}
-              </>
-             );
-            })()}
-           </select>
-          </div>
-          {f("make") === "Other" && (
-          <div>
-           <label className="block text-sm font-medium text-gray-700 mb-1">Specify make (optional)</label>
-           <input
-            type="text"
-            value={modalForm.make_other ?? ""}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, make_other: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
-            placeholder="e.g. Rare brand name"
-           />
-          </div>
-          )}
-          <div>
            <label className="block text-sm font-medium text-gray-700 mb-1">Body type</label>
            <select
             value={f("body_type")}
@@ -2665,6 +2716,51 @@ const fileInputRef = useRef(null);
            />
           </div>
           )}
+         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
+          <select
+           value={f("make")}
+           onChange={(e) => setModalForm((prev) => ({ ...prev, make: e.target.value }))}
+           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          >
+           <option value="">Select make/brand</option>
+           {(() => {
+            const bodyType = f("body_type");
+            const carMakes = [
+             "Toyota", "Honda", "Nissan", "Mitsubishi", "Ford", "Isuzu", "Hyundai", "Kia", "Suzuki",
+             "Mazda", "Chevrolet", "Fuso", "Hino", "Foton", "JAC", "BMW", "Mercedes-Benz", "Audi",
+             "Volkswagen", "Subaru",
+            ];
+            const motoMakes = [
+             "Yamaha", "Honda", "Suzuki", "Kawasaki", "Vespa", "Hatasu", "Husqavarna", "KTM", "Rusi", "Skygo", "MotorStar", "Bajaj", "TVS", "Ecooter",
+             "Bristol", "Ducati", "CFMoto", "Kymco", "SYM", "Keeway", "NWOW", "Triumph", "Other"
+            ];
+            const makes = bodyType === "Motorcycle" ? motoMakes : carMakes;
+            const current = f("make");
+            const hasOther = current && !makes.includes(current);
+            return (
+             <>
+              {makes.map((m) => (
+               <option key={m} value={m}>{m}</option>
+              ))}
+              {hasOther && <option value={current}>{current} (from document)</option>}
+             </>
+            );
+           })()}
+          </select>
+         </div>
+         {f("make") === "Other" && (
+         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Specify make (optional)</label>
+          <input
+           type="text"
+           value={modalForm.make_other ?? ""}
+           onChange={(e) => setModalForm((prev) => ({ ...prev, make_other: e.target.value }))}
+           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+           placeholder="e.g. Rare brand name"
+          />
+         </div>
+         )}
           <div>
            <label className="block text-sm font-medium text-gray-700 mb-1">Displacement</label>
            <input
@@ -2904,6 +3000,7 @@ const Step5ConfirmDetails = ({
  const fromOcr = (key) => {
   const v = key === "or_file_number" ? extractedDocDetails?.OR?.file_number
     : key === "cr_file_number" ? extractedDocDetails?.CR?.file_number
+    : key === "cr_owner_name" ? extractedDocDetails?.CR?.owner_name
     : key === "or_expiration" ? extractedDocDetails?.OR?.expiration_date
     : key === "dl_expiration" ? extractedDocDetails?.DL?.expiration_date
     : "";
@@ -2922,84 +3019,118 @@ const Step5ConfirmDetails = ({
      Please review, correct any errors, or add missing information, then confirm and submit.
     </p>
 
-    <div className="space-y-4">
-     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-       OR file number
-      </label>
-      <input
-       type="text"
-       value={confirmedDocDetails.or_file_number ?? ""}
-       onChange={(e) =>
-        setConfirmedDocDetails((prev) => ({
-         ...prev,
-         or_file_number: e.target.value,
-        }))
-       }
-       className="w-full px-3 py-2 border border-gray-300 rounded-md"
-       placeholder={fromOcr("or_file_number") ? "" : "Not extracted – please enter (e.g. 150100000342937)"}
-      />
-      {fromOcr("or_file_number") && (
-       <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
-      )}
+    <div className="space-y-6">
+     {/* CR section */}
+     <div className="space-y-3">
+      <h2 className="text-sm font-semibold text-gray-800">Certificate of Registration (CR)</h2>
+      <div>
+       <label className="block text-sm font-medium text-gray-700 mb-1">
+        CR file number (should match OR)
+       </label>
+       <input
+        type="text"
+        value={confirmedDocDetails.cr_file_number ?? ""}
+        onChange={(e) =>
+         setConfirmedDocDetails((prev) => ({
+          ...prev,
+          cr_file_number: e.target.value,
+         }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        placeholder={fromOcr("cr_file_number") ? "" : "Not extracted – please enter (e.g. 1501-00000342937)"}
+       />
+       {fromOcr("cr_file_number") && (
+        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+       )}
+      </div>
+      <div>
+       <label className="block text-sm font-medium text-gray-700 mb-1">
+        CR owner&apos;s name
+       </label>
+       <input
+        type="text"
+        value={confirmedDocDetails.cr_owner_name ?? ""}
+        onChange={(e) =>
+         setConfirmedDocDetails((prev) => ({
+          ...prev,
+          cr_owner_name: e.target.value,
+         }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        placeholder={fromOcr("cr_owner_name") ? "" : "Not extracted – please enter owner&apos;s full name"}
+       />
+       {fromOcr("cr_owner_name") && (
+        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+       )}
+      </div>
      </div>
-     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-       CR file number (should match OR)
-      </label>
-      <input
-       type="text"
-       value={confirmedDocDetails.cr_file_number ?? ""}
-       onChange={(e) =>
-        setConfirmedDocDetails((prev) => ({
-         ...prev,
-         cr_file_number: e.target.value,
-        }))
-       }
-       className="w-full px-3 py-2 border border-gray-300 rounded-md"
-       placeholder={fromOcr("cr_file_number") ? "" : "Not extracted – please enter (e.g. 1501-00000342937)"}
-      />
-      {fromOcr("cr_file_number") && (
-       <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
-      )}
+
+     {/* OR section */}
+     <div className="space-y-3">
+      <h2 className="text-sm font-semibold text-gray-800">Official Receipt (OR)</h2>
+      <div>
+       <label className="block text-sm font-medium text-gray-700 mb-1">
+        OR file number
+       </label>
+       <input
+        type="text"
+        value={confirmedDocDetails.or_file_number ?? ""}
+        onChange={(e) =>
+         setConfirmedDocDetails((prev) => ({
+          ...prev,
+          or_file_number: e.target.value,
+         }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        placeholder={fromOcr("or_file_number") ? "" : "Not extracted – please enter (e.g. 150100000342937)"}
+       />
+       {fromOcr("or_file_number") && (
+        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+       )}
+      </div>
+      <div>
+       <label className="block text-sm font-medium text-gray-700 mb-1">
+        OR expiration (MM/YYYY)
+       </label>
+       <input
+        type="month"
+        value={confirmedDocDetails.or_expiration ?? ""}
+        onChange={(e) =>
+         setConfirmedDocDetails((prev) => ({
+          ...prev,
+          or_expiration: e.target.value,
+         }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+       />
+       {fromOcr("or_expiration") && (
+        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+       )}
+      </div>
      </div>
-     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-       OR expiration (MM/YYYY)
-      </label>
-      <input
-       type="month"
-       value={confirmedDocDetails.or_expiration ?? ""}
-       onChange={(e) =>
-        setConfirmedDocDetails((prev) => ({
-         ...prev,
-         or_expiration: e.target.value,
-        }))
-       }
-       className="w-full px-3 py-2 border border-gray-300 rounded-md"
-      />
-      {fromOcr("or_expiration") && (
-       <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
-      )}
-     </div>
-     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-       DL expiration (YYYY/MM/DD)
-      </label>
-      <input
-       type="date"
-       value={confirmedDocDetails.dl_expiration ?? ""}
-       onChange={(e) =>
-        setConfirmedDocDetails((prev) => ({
-         ...prev,
-         dl_expiration: e.target.value,
-        }))
-       }
-       className="w-full px-3 py-2 border border-gray-300 rounded-md"
-      />
-      {fromOcr("dl_expiration") && (
-       <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
-      )}
+
+     {/* DL section */}
+     <div className="space-y-3">
+      <h2 className="text-sm font-semibold text-gray-800">Driver&apos;s License (DL)</h2>
+      <div>
+       <label className="block text-sm font-medium text-gray-700 mb-1">
+        DL expiration (YYYY/MM/DD)
+       </label>
+       <input
+        type="date"
+        value={confirmedDocDetails.dl_expiration ?? ""}
+        onChange={(e) =>
+         setConfirmedDocDetails((prev) => ({
+          ...prev,
+          dl_expiration: e.target.value,
+         }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+       />
+       {fromOcr("dl_expiration") && (
+        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+       )}
+      </div>
      </div>
     </div>
 

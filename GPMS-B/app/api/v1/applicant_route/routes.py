@@ -424,7 +424,20 @@ async def delete_application(
     Temporarily delete an application and all its related records (cascade delete)
     """
     view = ApplicantView(db)
-    return await view.delete_application(application_id)
+    return await view.delete_application(application_id, current_user.user_id)
+
+@router.post("/application/{application_id}/payment-slip", response_model=dict)
+async def send_payment_slip(
+    application_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """
+    Send the initial payment slip email for a specific application.
+    Can be triggered from the applicant dashboard via \"Get Payment Slip\".
+    """
+    view = ApplicantView(db)
+    return await view.send_initial_payment_slip(application_id, current_user.user_id)
 
 @router.get("/applications/to-submit", response_model=List[ApplicationListResponse])
 async def get_to_submit_applications(

@@ -82,13 +82,15 @@ export const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
       {menuItems.map((item) => {
        const isActive = path === item.link;
        return (
-        <li
-         key={item.id}
-         className={`mb-3 p-2 rounded-lg hover:bg-primary hover:text-white ${
-          isActive ? "bg-primary text-white" : ""
-         }`}
-        >
-         <Link to={item.link} className="flex items-center gap-2">
+        <li key={item.id} className="mb-3">
+         <Link
+          to={item.link}
+          className={`w-full flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
+           isActive
+            ? "bg-primary text-white"
+            : "hover:bg-primary hover:text-white"
+          }`}
+         >
           <item.icon size={24} />
           <p className="text-md font-medium">{item.title}</p>
          </Link>

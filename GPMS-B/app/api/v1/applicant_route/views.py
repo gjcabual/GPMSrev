@@ -27,9 +27,15 @@ class ApplicantView:
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    async def delete_application(self, application_id: int):
+    async def delete_application(self, application_id: int, user_id: UUID):
         try:
-            return await self.controller.delete_application(application_id)
+            return await self.controller.delete_application(application_id, user_id)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    async def send_initial_payment_slip(self, application_id: int, user_id: UUID):
+        try:
+            return await self.controller.send_initial_payment_slip(application_id, user_id)
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 

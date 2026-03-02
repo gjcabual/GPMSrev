@@ -15,6 +15,27 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { BiInfoCircle } from "react-icons/bi";
 
+// #region agent log helper
+const agentLog = (payload) => {
+ fetch("http://127.0.0.1:7242/ingest/083cd7ac-27ab-49c8-accd-3eca228db809", {
+  method: "POST",
+  headers: {
+   "Content-Type": "application/json",
+   "X-Debug-Session-Id": "6cd765",
+  },
+  body: JSON.stringify({
+   sessionId: "6cd765",
+   runId: payload.runId || "pre-fix",
+   hypothesisId: payload.hypothesisId,
+   location: payload.location,
+   message: payload.message,
+   data: payload.data || {},
+   timestamp: Date.now(),
+  }),
+ }).catch(() => {});
+};
+// #endregion
+
 // Image display component that fetches image from backend
 const ImageDisplay = ({ imageUrl, alt, className, fallback }) => {
  const [loading, setLoading] = useState(true);
@@ -129,6 +150,25 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
 
    const data = await response.json();
    setApplications(data);
+   // #region agent log
+   agentLog({
+    hypothesisId: "H2_H4",
+    location: "ApplicationInfo.jsx:getMyApplications",
+    message: "Fetched applications for Application tab",
+    data: {
+     filter,
+     count: Array.isArray(data) ? data.length : 0,
+     sample:
+      Array.isArray(data) && data.length > 0
+       ? {
+          application_id: data[0].application_id,
+          status: data[0].status,
+          vehicle_type: data[0].vehicle_type,
+         }
+       : null,
+    },
+   });
+   // #endregion
   } catch (error) {
    console.error("Error fetching applications:", error);
    toast.error("Failed to load applications. Please try again.");
@@ -167,11 +207,67 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
   }
 
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showGetSlipConfirm, setShowGetSlipConfirm] = useState(false);
+  const initialStatus = application.status || "Pending";
+  const [statusLabel, setStatusLabel] = useState(initialStatus);
+  const [hasRequestedSlip, setHasRequestedSlip] = useState(initialStatus === "Waiting for approval");
+
+  // #region agent log
+  useEffect(() => {
+   agentLog({
+    hypothesisId: "H1_H3",
+    location: "ApplicationInfo.jsx:ApplicationCard:init",
+    message: "Initialized ApplicationCard",
+    data: {
+     application_id: application.application_id,
+     backend_status: application.status,
+     statusLabel,
+     hasRequestedSlip,
+    },
+   });
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // #endregion
+
+  const handleDelete = async () => {
+   try {
+    setIsDeleting(true);
+    const response = await fetch(
+     buildUrl(`/applicant/application/${application.application_id}`),
+     {
+      method: "DELETE",
+      headers: {
+       "Content-Type": "application/json",
+       Authorization: `Bearer ${localStorage.getItem("token")}`,
+      },
+     }
+    );
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+     toast.error(data.detail || data.message || "Failed to delete application.");
+     return;
+    }
+
+    toast.success("Application deleted successfully.");
+    setShowDeleteModal(false);
+    // Refresh list after delete
+    getMyApplications();
+   } catch (error) {
+    console.error("Error deleting application:", error);
+    toast.error("Failed to delete application. Please try again.");
+   } finally {
+    setIsDeleting(false);
+   }
+  };
 
   return (
    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden transition-transform hover:shadow-md">
     <div className="h-1 bg-primary" />
-    <div className="p-3 sm:p-4">
+     <div className="p-3 sm:p-4">
      <div className="flex items-center justify-between mb-2 sm:mb-3">
       <div className="flex items-center gap-1.5 sm:gap-2">
        <div className="h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-primary/10 flex items-center justify-center">
@@ -179,9 +275,19 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
        </div>
        <div>
         <h3 className="font-medium text-base sm:text-lg">
-         {application.application_role}
+         <span
+          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+           statusLabel === "Pending"
+            ? "bg-orange-100 text-orange-700"
+            : statusLabel === "Waiting for approval"
+            ? "bg-lime-100 text-lime-700"
+            : "bg-blue-100 text-blue-700"
+          }`}
+         >
+          {statusLabel}
+         </span>
         </h3>
-        <p className="text-xs sm:text-sm text-gray-500">Application Role</p>
+        <p className="text-xs sm:text-sm text-gray-500 mt-1">Status</p>
        </div>
       </div>
      </div>
@@ -207,7 +313,7 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
         </p>
        </div>
        <div className="bg-gray-50 p-2 sm:p-4 rounded-md">
-        <p className="text-sm sm:text-base text-gray-500">Role</p>
+        <p className="text-sm sm:text-base text-gray-500">Application Role</p>
         <p className="font-medium text-base sm:text-lg truncate">
          {application?.application_role || "N/A"}
         </p>
@@ -251,21 +357,39 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
      </div>
      <div className="mt-4 sm:mt-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
       <div className="flex items-center gap-2">
-       <button className="h-7 sm:h-8 text-xs sm:text-sm font-medium text-white flex items-center bg-red-500 rounded-md px-3 sm:px-4">
-        To Pay
-       </button>
-       <button
-        onClick={() => setShowUploadModal(true)}
-        className="border border-primary rounded-md px-4 h-8 text-sm text-primary"
-       >
-        Upload Receipt
-       </button>
+       {!hasRequestedSlip && (
+        <>
+         <button
+          type="button"
+          onClick={() => setShowGetSlipConfirm(true)}
+          className="h-7 sm:h-8 text-xs sm:text-sm font-medium text-white flex items-center bg-primary rounded-md px-3 sm:px-4 hover:bg-primary/90"
+         >
+          Get Payment Slip
+         </button>
+         <button
+          type="button"
+          onClick={() => setShowDeleteModal(true)}
+          className="border border-red-500 text-red-600 rounded-md px-4 h-8 text-sm hover:bg-red-50"
+         >
+          Delete
+         </button>
+        </>
+       )}
+       {hasRequestedSlip && (
+        <button
+         onClick={() => setShowUploadModal(true)}
+         className="border border-primary rounded-md px-4 h-8 text-sm text-primary"
+        >
+         Upload Receipt
+        </button>
+       )}
       </div>
       <div className="flex items-start gap-2">
        <BiInfoCircle size={20} className=" text-gray-500 flex-shrink-0" />
        <p className="text-xs sm:text-sm text-gray-500">
-        Check your email for the slip, pay at the cashier, upload your receipt,
-        then proceed to OCSSS Office
+        {hasRequestedSlip
+         ? "Check your email for the slip, pay at the cashier, upload your receipt, then proceed to OCSSS Office."
+         : "Click Get Payment Slip to receive your slip by email. After payment, upload your receipt, then proceed to OCSSS Office."}
        </p>
       </div>
      </div>
@@ -276,6 +400,118 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
        applicationRole={application.application_role}
        onSuccess={onSlipUploaded}
       />
+     )}
+     {showDeleteModal && (
+      <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex justify-center items-center z-50">
+       <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-6 relative">
+        <button
+         type="button"
+         onClick={() => setShowDeleteModal(false)}
+         className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+        >
+         <IoClose size={20} />
+        </button>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">
+         Delete application?
+        </h2>
+        <p className="text-sm text-gray-600 mb-4">
+         This will permanently remove this pending application. This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2">
+         <button
+          type="button"
+          onClick={() => setShowDeleteModal(false)}
+          className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+         >
+          Cancel
+         </button>
+         <button
+          type="button"
+          onClick={handleDelete}
+          disabled={isDeleting}
+          className={`px-4 py-2 text-sm rounded-md text-white ${
+           isDeleting ? "bg-red-300 cursor-not-allowed" : "bg-red-500 hover:bg-red-600"
+          }`}
+         >
+          {isDeleting ? "Deleting..." : "Delete"}
+         </button>
+        </div>
+       </div>
+      </div>
+     )}
+     {showGetSlipConfirm && (
+      <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex justify-center items-center z-50">
+       <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-6 relative">
+        <button
+         type="button"
+         onClick={() => setShowGetSlipConfirm(false)}
+         className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+        >
+         <IoClose size={20} />
+        </button>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">
+         Get payment slip?
+        </h2>
+        <p className="text-sm text-gray-600 mb-4">
+         After you get the payment slip, this application can no longer be deleted. The status will change to
+         {" "}“Waiting for approval” and you will be able to upload your receipt.
+        </p>
+        <div className="flex justify-end gap-2">
+         <button
+          type="button"
+          onClick={() => setShowGetSlipConfirm(false)}
+          className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+         >
+          Cancel
+         </button>
+         <button
+          type="button"
+          onClick={async () => {
+           try {
+            const response = await fetch(
+             buildUrl(`/applicant/application/${application.application_id}/payment-slip`),
+             {
+              method: "POST",
+              headers: {
+               "Content-Type": "application/json",
+               Authorization: `Bearer ${localStorage.getItem("token")}`,
+              },
+             }
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+             toast.error(data.detail || data.message || "Failed to send payment slip.");
+             return;
+            }
+            setHasRequestedSlip(true);
+            setStatusLabel("Waiting for approval");
+            // #region agent log
+            agentLog({
+             hypothesisId: "H1_H2",
+             location: "ApplicationInfo.jsx:ApplicationCard:GetPaymentSlip",
+             message: "Requested payment slip for application",
+             data: {
+              application_id: application.application_id,
+              prevStatus: initialStatus,
+              newStatusLabel: "Waiting for approval",
+              responseMessage: data.message || null,
+             },
+            });
+            // #endregion
+            setShowGetSlipConfirm(false);
+            toast.success(data.message || "Payment slip has been sent. Please check your email.");
+           } catch (e) {
+            console.error("Error requesting payment slip:", e);
+            toast.error("Failed to request payment slip. Please try again.");
+           }
+          }}
+          className="px-4 py-2 text-sm rounded-md text-white bg-primary hover:bg-primary/90"
+         >
+          Confirm
+         </button>
+        </div>
+       </div>
+      </div>
      )}
     </div>
    </div>

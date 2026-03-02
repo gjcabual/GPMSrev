@@ -137,22 +137,6 @@ class ApplicantController:
 
                 await self.db.commit()
 
-                # Get the estimated sticker price based on role
-                estimated_price = await self.get_sticker_price_by_role(application_data.role)
-
-                # Send gatepass slip email to applicant (payment slip with estimated price)
-                slip_sent = await send_payment_slip_email(
-                    db=self.db,
-                    user_id=user_id,
-                    nature_of_payment=f"New Parking Sticker Application ({application_data.role})",
-                    total_amount=estimated_price,
-                )
-                if not slip_sent:
-                    logger.warning(
-                        "Gatepass slip email not sent to applicant user_id=%s application_id=%s. Check EMAIL_* env.",
-                        user_id, application.application_id,
-                    )
-
                 # Format response with both application and driver details
                 result = {
                     "application_id": application.application_id,
@@ -238,28 +222,92 @@ class ApplicantController:
                 
             # Default price if no batch found
             return 500.00
+
+        except Exception as e:
+            logger.warning("Error getting sticker price: %s", e)
+            # Return a reasonable default if there's an error
+            return 500.00
+
+    async def send_initial_payment_slip(self, application_id: int, user_id: UUID) -> dict:
+        """
+        Send the initial payment slip email for a specific application.
+        This can be triggered from the dashboard via a \"Get Payment Slip\" action.
+        """
+        try:
+            # Fetch application and verify ownership
+            query = select(Application).where(Application.application_id == application_id)
+            result = await self.db.execute(query)
+            application = result.scalar_one_or_none()
+
+            if not application:
+                raise HTTPException(status_code=404, detail="Application not found")
+
+            if application.user_id != user_id:
+                raise HTTPException(status_code=403, detail="You are not authorized to access this application")
+
+            # Check current status
+            status_query = select(ApplicationStatus.status).where(
+                ApplicationStatus.application_id == application_id
+            )
+            status_result = await self.db.execute(status_query)
+            status_row = status_result.first()
+            app_status = status_row[0] if status_row else None
+
+            # Only allow requesting slip when application is Pending and no slip has been attached
+            if app_status is not None and app_status not in ("Pending", "Waiting for approval"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Payment slip can only be requested while the application is in Pending status"
+                )
+            if application.slip_id is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A payment slip has already been attached for this application"
+                )
+
+            # Get estimated price based on role and send email
+            estimated_price = await self.get_sticker_price_by_role(application.role)
+
+            slip_sent = await send_payment_slip_email(
+                db=self.db,
+                user_id=user_id,
+                nature_of_payment=f"New Parking Sticker Application ({application.role})",
+                total_amount=estimated_price,
+            )
+
+            if not slip_sent:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Payment slip email could not be sent. Please contact support."
+                )
+
+            # Add a new status entry for "Waiting for approval"
+            current_date = datetime.utcnow().date()
+            waiting_status = ApplicationStatus(
+                status="Waiting for approval",
+                date=current_date,
+                application_id=application.application_id,
+                processed_by=None
+            )
+            self.db.add(waiting_status)
+            await self.db.commit()
+
+            return {"message": "Payment slip has been sent to your email."}
+
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            logger.exception("Error in send_initial_payment_slip: %s", e)
+            raise HTTPException(status_code=400, detail=str(e))
             
         except Exception as e:
             logger.warning("Error getting sticker price: %s", e)
             # Return a reasonable default if there's an error
             return 500.00
 
-    async def delete_application(self, application_id: int):
+    async def delete_application(self, application_id: int, user_id: UUID):
         try:
-            # First check if application has any status
-            status_query = select(ApplicationStatus).where(
-                ApplicationStatus.application_id == application_id
-            )
-            status_result = await self.db.execute(status_query)
-            status = status_result.first()
-
-            if status:
-                raise HTTPException(
-                    status_code=400,
-                    detail="The application has already been submitted and cannot be deleted"
-                )
-
-            # Then get the application if no status found
+            # Get the application
             query = select(Application).where(Application.application_id == application_id)
             result = await self.db.execute(query)
             application = result.first()
@@ -269,6 +317,34 @@ class ApplicantController:
                     status_code=404,
                     detail="Application not found"
                 )
+
+            # Ensure the application belongs to the current user
+            if application[0].user_id != user_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You are not authorized to delete this application"
+                )
+
+            # Check latest application status (by most recent status_id)
+            status_query = (
+                select(ApplicationStatus.status)
+                .where(ApplicationStatus.application_id == application_id)
+                .order_by(ApplicationStatus.status_id.desc())
+                .limit(1)
+            )
+            status_result = await self.db.execute(status_query)
+            status_row = status_result.first()
+            app_status = status_row[0] if status_row else None
+
+            # Only allow delete when:
+            # - no status yet (draft), OR
+            # - status is Pending AND no slip has been uploaded
+            if app_status is not None:
+                if app_status != "Pending" or application[0].slip_id is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="The application has already been submitted and cannot be deleted"
+                    )
 
             # Handle slip deletion if exists
             if application[0].slip_id:  # Access first element since result.first() returns a tuple
@@ -301,22 +377,25 @@ class ApplicantController:
             # Run cleanup first to remove stale applications
             await cleanup_stale_applications(self.db)
             
-            # Return applications that are Pending and not yet submitted (no slip):
+            # Return applications that are Pending / Waiting for approval and not yet submitted (no slip):
             # created but awaiting payment / upload receipt.
             query = (
                 select(
                     Application,
-                    Vehicle
+                    Vehicle,
+                    ApplicationStatus.status
                 )
                 .join(Vehicle, Application.plate_no == Vehicle.plate_no)
                 .join(ApplicationStatus, Application.application_id == ApplicationStatus.application_id)
                 .where(
                     and_(
                         Application.user_id == user_id,
-                        ApplicationStatus.status == "Pending",
+                        ApplicationStatus.status.in_(["Pending", "Waiting for approval"]),
                         Application.slip_id == None
                     )
                 )
+                # Order by latest status_id first so we can pick the most recent per application
+                .order_by(Application.application_id, ApplicationStatus.status_id.desc())
             )
 
             # Add vehicle type filter if provided
@@ -329,11 +408,11 @@ class ApplicantController:
             # Deduplicate by application_id (one app can have multiple status rows)
             seen_ids = set()
             applications = []
-            for app, vehicle in rows:
+            for app, vehicle, status_value in rows:
                 if app.application_id in seen_ids:
                     continue
                 seen_ids.add(app.application_id)
-                applications.append((app, vehicle))
+                applications.append((app, vehicle, status_value))
 
             return [
                 {
@@ -343,10 +422,11 @@ class ApplicantController:
                     "brand": vehicle.brand,
                     "application_role": app.role,
                     "vehicle_type": vehicle.vehicle_type,
+                    "status": status_value or "Pending",
                     "front_image": f"/applicant/vehicle/{vehicle.plate_no}/image/front" if vehicle.front_image else None,
                     "back_image": f"/applicant/vehicle/{vehicle.plate_no}/image/back" if vehicle.back_image else None
                 }
-                for app, vehicle in applications
+                for app, vehicle, status_value in applications
             ]
 
         except Exception as e:
