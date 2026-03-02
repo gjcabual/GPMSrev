@@ -20,3 +20,14 @@
 * {
  font-family: "Poppins";
 }
+
+/* Hide main scrollbars globally; scrolling still works */
+html,
+body {
+ scrollbar-width: none;
+ -ms-overflow-style: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+ display: none;
+}

@@ -1,10 +1,17 @@
 // GPMS-A/src/components/DocumentUpload.jsx
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { extractDocument } from '../utils/ocrService'
 
 export default function DocumentUpload({ onExtracted }) {
     const [loading, setLoading] = useState(false)
     const [error, setError]     = useState(null)
+    const crInputRef  = useRef(null)
+    const orInputRef  = useRef(null)
+    const dlInputRef  = useRef(null)
+
+    function clearFileInput(ref) {
+        if (ref?.current) ref.current.value = ''
+    }
 
     async function handleUpload(e, docType) {
         const file = e.target.files[0]
@@ -26,12 +33,18 @@ export default function DocumentUpload({ onExtracted }) {
                 throw new Error(`Wrong document. Expected ${docType.toUpperCase()}, got ${result.doc_type}`)
             }
 
-            onExtracted(docType, result.fields)
+            // Map DL 'name' to owner_name for form consistency
+            const fields = docType === 'dl' && result.fields?.name != null
+                ? { ...result.fields, owner_name: result.fields.name }
+                : result.fields
 
+            onExtracted(docType, fields)
         } catch (err) {
             setError(err.message)
         } finally {
             setLoading(false)
+            const refs = { cr: crInputRef, or: orInputRef, dl: dlInputRef }
+            clearFileInput(refs[docType])
         }
     }
 
@@ -39,17 +52,17 @@ export default function DocumentUpload({ onExtracted }) {
         <div>
             <div>
                 <label>CR (Certificate of Registration)</label>
-                <input type="file" accept="image/*"
+                <input ref={crInputRef} type="file" accept="image/*"
                     onChange={e => handleUpload(e, 'cr')} />
             </div>
             <div>
                 <label>OR (Official Receipt)</label>
-                <input type="file" accept="image/*"
+                <input ref={orInputRef} type="file" accept="image/*"
                     onChange={e => handleUpload(e, 'or')} />
             </div>
             <div>
                 <label>Driver's License</label>
-                <input type="file" accept="image/*"
+                <input ref={dlInputRef} type="file" accept="image/*"
                     onChange={e => handleUpload(e, 'dl')} />
             </div>
 

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { IoMdCloudUpload } from "react-icons/io";
 import { VerifyModal } from "../../../components/applicant/VerifyModal";
 import { buildUrl } from "../../../utils/buildUrl";
+import * as psgcApi from "../../../utils/psgcApi";
 import { toast } from "sonner";
 import { IoMdAdd } from "react-icons/io";
 import { IoClose } from "react-icons/io5";
@@ -15,6 +16,39 @@ const steps = [
  "Vehicle Information",
  "Confirm document details",
 ];
+
+/** Normalize date string to YYYY-MM-DD for input type="date". */
+function toDateInputValue(str) {
+ if (str == null || String(str).trim() === "") return "";
+ const s = String(str).trim();
+ const slash = s.split("/");
+ const dash = s.split("-");
+ if (slash.length === 3) {
+  const [a, b, c] = slash.map((n) => n.padStart(2, "0"));
+  if (a.length === 4) return `${a}-${b}-${c}`;
+  if (c.length === 4) return `${c}-${a}-${b}`;
+ }
+ if (dash.length === 3) {
+  const [a, b, c] = dash.map((n) => n.padStart(2, "0"));
+  if (a.length === 4) return `${a}-${b}-${c}`;
+  if (c.length === 4) return `${c}-${b}-${a}`;
+ }
+ return s;
+}
+
+/** Normalize to YYYY-MM for input type="month" (e.g. OR expiration). */
+function toMonthInputValue(str) {
+ if (str == null || String(str).trim() === "") return "";
+ const s = String(str).trim();
+ const parts = s.split("/").length >= 2 ? s.split("/") : s.split("-");
+ if (parts.length >= 2) {
+  const p0 = parts[0].trim();
+  const p1 = parts[1].trim().padStart(2, "0");
+  if (p0.length === 4) return `${p0}-${p1}`;
+  if (p1.length === 4) return `${p1}-${p0.padStart(2, "0")}`;
+ }
+ return s;
+}
 
 export const Application = () => {
  const nav = useNavigate();
@@ -46,7 +80,7 @@ export const Application = () => {
  });
  const [extractedDocDetails, setExtractedDocDetails] = useState({
   OR: { file_number: "", expiration_date: "" },
-  CR: { file_number: "", date: "", owner_name: "", owner_address: "", engine_no: "", chassis_no: "", plate_number: "", make: "", year_model: "", body_type: "", piston_displacement: "" },
+  CR: { file_number: "", date: "", owner_name: "", owner_address: "", plate_number: "", make: "", year_model: "", body_type: "", piston_displacement: "" },
   DL: { expiration_date: "" },
  });
  const [confirmedDocDetails, setConfirmedDocDetails] = useState({
@@ -57,8 +91,6 @@ export const Application = () => {
   cr_date: "",
   cr_owner_name: "",
   cr_owner_address: "",
-  cr_engine_no: "",
-  cr_chassis_no: "",
   cr_plate_number: "",
   cr_plate_number_blank_or_temp: false,
   cr_make: "",
@@ -1753,7 +1785,7 @@ const Step3 = ({
      </div>
 
      {/* Driver Cards */}
-     <div className="mt-2 max-h-[200px] overflow-y-auto pr-1">
+     <div className="mt-2 max-h-[200px] overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {loading ? (
        <div className="flex justify-center items-center py-6">
         <div className="animate-spin h-6 w-6 border-3 border-primary border-t-transparent rounded-full"></div>
@@ -1950,33 +1982,105 @@ const Step4 = ({
   date: "",
   owner_name: "",
   owner_address: "",
-  engine_no: "",
-  chassis_no: "",
   plate_number: "",
   plate_number_blank_or_temp: false,
   make: "",
   year_model: "",
   body_type: "",
+  body_type_other: "",
+  make_other: "",
   piston_displacement: "",
  });
+ const [phAddress, setPhAddress] = useState({
+  regions: [],
+  provinces: [],
+  cities: [],
+  barangays: [],
+  regionCode: "",
+  regionName: "",
+  provinceCode: "",
+  provinceName: "",
+  cityCode: "",
+  cityName: "",
+  barangayCode: "",
+  barangayName: "",
+  street: "",
+  loading: false,
+ });
+ const [showPhAddressModal, setShowPhAddressModal] = useState(false);
  const [isExtractingOne, setIsExtractingOne] = useState(false);
  const [fileError, setFileError] = useState(false);
  const [showDocFullscreen, setShowDocFullscreen] = useState(false);
  const [fullscreenZoom, setFullscreenZoom] = useState(100);
+ const [fullscreenPan, setFullscreenPan] = useState({ x: 0, y: 0 });
+ const [fullscreenPanning, setFullscreenPanning] = useState(false);
+ const fullscreenDragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPanX: 0, startPanY: 0 });
+ const fullscreenPanRef = useRef(fullscreenPan);
+ fullscreenPanRef.current = fullscreenPan;
 const fileInputRef = useRef(null);
   const extractedPayloadRef = useRef(null);
   const [pendingExtractedData, setPendingExtractedData] = useState(null);
+  const fullscreenOverlayRef = useRef(null);
 
  const FS_ZOOM_MIN = 25;
  const FS_ZOOM_MAX = 300;
  const FS_ZOOM_STEP = 10;
  const handleDocPreviewClick = () => {
   setFullscreenZoom(100);
+  setFullscreenPan({ x: 0, y: 0 });
   setShowDocFullscreen(true);
+ };
+ const handleFullscreenPanStart = (e) => {
+  if (e.button !== 0) return;
+  const pan = fullscreenPanRef.current;
+  fullscreenDragRef.current = {
+   isDragging: true,
+   startX: e.clientX,
+   startY: e.clientY,
+   startPanX: pan.x,
+   startPanY: pan.y,
+  };
+  setFullscreenPanning(true);
+ };
+ const handleFullscreenPanMove = (e) => {
+  const d = fullscreenDragRef.current;
+  if (!d.isDragging) return;
+  setFullscreenPan({
+   x: d.startPanX + (e.clientX - d.startX),
+   y: d.startPanY + (e.clientY - d.startY),
+  });
+ };
+ const handleFullscreenPanEnd = () => {
+  fullscreenDragRef.current.isDragging = false;
+  setFullscreenPanning(false);
  };
  const handleFullscreenZoomIn = () => setFullscreenZoom((z) => Math.min(FS_ZOOM_MAX, z + FS_ZOOM_STEP));
  const handleFullscreenZoomOut = () => setFullscreenZoom((z) => Math.max(FS_ZOOM_MIN, z - FS_ZOOM_STEP));
  const handleFullscreenZoomReset = () => setFullscreenZoom(100);
+
+ useEffect(() => {
+  const el = fullscreenOverlayRef.current;
+  if (!el || !showDocFullscreen) return;
+  const onWheel = (e) => {
+   e.preventDefault();
+   if (e.deltaY < 0) handleFullscreenZoomIn();
+   else if (e.deltaY > 0) handleFullscreenZoomOut();
+  };
+  el.addEventListener("wheel", onWheel, { passive: false });
+  return () => el.removeEventListener("wheel", onWheel, { passive: false });
+ }, [showDocFullscreen]);
+
+ useEffect(() => {
+  if (!showDocFullscreen) return;
+  const onMove = (e) => handleFullscreenPanMove(e);
+  const onEnd = () => handleFullscreenPanEnd();
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onEnd);
+  return () => {
+   window.removeEventListener("mousemove", onMove);
+   window.removeEventListener("mouseup", onEnd);
+  };
+ }, [showDocFullscreen]);
 
  useEffect(() => {
   setHasApiError(fileError);
@@ -1992,26 +2096,119 @@ const fileInputRef = useRef(null);
    setModalForm({
     file_number: toStr(data.file_number),
     expiration_date: "",
-    date: toStr(data.date),
+    date: toDateInputValue(data.date) || toStr(data.date),
     owner_name: toStr(data.owner_name),
     owner_address: toStr(data.owner_address),
-    engine_no: toStr(data.engine_no),
-    chassis_no: toStr(data.chassis_no),
     plate_number: toStr(data.plate_number),
     plate_number_blank_or_temp: false,
     make: toStr(data.make),
     year_model: toStr(data.year_model),
     body_type: toStr(data.body_type),
+    body_type_other: "",
+    make_other: "",
     piston_displacement: toStr(data.piston_displacement),
    });
   } else if (docType === "OR" || docType === "DL") {
+   const exp = toStr(data.expiration_date);
    setModalForm((prev) => ({
     ...prev,
     file_number: toStr(data.file_number),
-    expiration_date: toStr(data.expiration_date),
+    expiration_date: docType === "OR" ? (toMonthInputValue(exp) || exp) : (toDateInputValue(exp) || exp),
    }));
   }
  }, [showDocModal, pendingExtractedData]);
+
+ useEffect(() => {
+  if (!showDocModal || modalDocType !== "CR") return;
+  let cancelled = false;
+  setPhAddress((prev) => ({ ...prev, loading: true }));
+  psgcApi.getRegions()
+   .then((data) => { if (!cancelled) setPhAddress((prev) => ({ ...prev, regions: data || [], loading: false })); })
+   .catch(() => { if (!cancelled) setPhAddress((prev) => ({ ...prev, regions: [], loading: false })); });
+  return () => { cancelled = true; };
+ }, [showDocModal, modalDocType]);
+
+ function buildPhAddressString(ph) {
+  const parts = [ph.street, ph.barangayName, ph.cityName, ph.provinceName, ph.regionName].filter(Boolean);
+  return parts.join(", ");
+ }
+
+ function applyPhAddressToForm(nextPh) {
+  const str = buildPhAddressString(nextPh);
+  setModalForm((prev) => ({ ...prev, owner_address: str }));
+ }
+
+ function handlePhRegionChange(code, name) {
+  const next = {
+   ...phAddress,
+   regionCode: code,
+   regionName: name || "",
+   provinces: [],
+   cities: [],
+   barangays: [],
+   provinceCode: "",
+   provinceName: "",
+   cityCode: "",
+   cityName: "",
+   barangayCode: "",
+   barangayName: "",
+  };
+  setPhAddress(next);
+  if (!code) return;
+  psgcApi.getProvinces(code).then((provinces) => {
+   setPhAddress((prev) => ({ ...prev, provinces: provinces || [] }));
+   if ((provinces || []).length === 0) {
+    psgcApi.getCitiesMunicipalitiesByRegion(code).then((cities) => {
+     setPhAddress((prev) => ({ ...prev, cities: cities || [] }));
+    });
+   }
+  });
+ }
+
+ function handlePhProvinceChange(code, name) {
+  const next = {
+   ...phAddress,
+   provinceCode: code,
+   provinceName: name || "",
+   cities: [],
+   barangays: [],
+   cityCode: "",
+   cityName: "",
+   barangayCode: "",
+   barangayName: "",
+  };
+  setPhAddress(next);
+  if (!code) return;
+  psgcApi.getCitiesMunicipalitiesByProvince(code).then((cities) => {
+   setPhAddress((prev) => ({ ...prev, cities: cities || [] }));
+  });
+ }
+
+ function handlePhCityChange(code, name) {
+  const next = {
+   ...phAddress,
+   cityCode: code,
+   cityName: name || "",
+   barangays: [],
+   barangayCode: "",
+   barangayName: "",
+  };
+  setPhAddress(next);
+  if (!code) return;
+  psgcApi.getBarangays(code).then((barangays) => {
+   setPhAddress((prev) => ({ ...prev, barangays: barangays || [] }));
+  });
+ }
+
+ function handlePhBarangayChange(code, name) {
+  const next = { ...phAddress, barangayCode: code, barangayName: name || "" };
+  setPhAddress(next);
+ }
+
+ function handlePhStreetChange(value) {
+  const next = { ...phAddress, street: value };
+  setPhAddress(next);
+ }
 
  const currentDocType = DOC_ORDER[currentDocIndex];
  const currentLabel = DOC_LABELS[currentDocType];
@@ -2046,24 +2243,23 @@ const fileInputRef = useRef(null);
    }
    const docType = currentDocType;
    const toStr = (v) => (v != null && v !== "" ? String(v).trim() : "");
-   const payload = {
-    _docType: docType,
-    file_number: data.file_number,
-    expiration_date: data.expiration_date,
-    date: data.date,
-    owner_name: data.owner_name,
-    owner_address: data.owner_address,
-    engine_no: data.engine_no,
-    chassis_no: data.chassis_no,
-    plate_number: data.plate_number,
-    make: data.make,
-    year_model: data.year_model,
-    body_type: data.body_type,
-    piston_displacement: data.piston_displacement,
-   };
-   const hasExtractedData = docType === "CR"
-    ? (toStr(payload.file_number) || toStr(payload.owner_name) || toStr(payload.date) || toStr(payload.plate_number) || toStr(payload.make))
-    : (toStr(payload.file_number) || toStr(payload.expiration_date));
+  const payload = docType === "CR"
+   ? {
+     _docType: docType,
+     file_number: data.file_number,
+     owner_name: data.owner_name,
+     plate_number: data.plate_number,
+     year_model: data.year_model,
+     piston_displacement: data.piston_displacement,
+    }
+   : {
+     _docType: docType,
+     file_number: data.file_number,
+     expiration_date: data.expiration_date,
+    };
+  const hasExtractedData = docType === "CR"
+   ? (toStr(payload.file_number) || toStr(payload.owner_name) || toStr(payload.plate_number) || toStr(payload.year_model) || toStr(payload.piston_displacement))
+   : (toStr(payload.file_number) || toStr(payload.expiration_date));
    if (!hasExtractedData) {
     toast.info("No data was extracted from the document. Please enter the details manually.");
    }
@@ -2079,23 +2275,24 @@ const fileInputRef = useRef(null);
       return {
        file_number: toStr(payload.file_number),
        expiration_date: "",
-       date: toStr(payload.date),
+       date: "",
        owner_name: toStr(payload.owner_name),
-       owner_address: toStr(payload.owner_address),
-       engine_no: toStr(payload.engine_no),
-       chassis_no: toStr(payload.chassis_no),
+       owner_address: "",
        plate_number: toStr(payload.plate_number),
        plate_number_blank_or_temp: false,
-       make: toStr(payload.make),
+       make: "",
        year_model: toStr(payload.year_model),
-       body_type: toStr(payload.body_type),
+       body_type: "",
+       body_type_other: "",
+       make_other: "",
        piston_displacement: toStr(payload.piston_displacement),
       };
      }
+     const exp = toStr(payload.expiration_date);
      return {
       ...prev,
       file_number: toStr(payload.file_number),
-      expiration_date: toStr(payload.expiration_date),
+      expiration_date: docType === "OR" ? (toMonthInputValue(exp) || exp) : (toDateInputValue(exp) || exp),
      };
     });
    }, 0);
@@ -2128,10 +2325,8 @@ const fileInputRef = useRef(null);
       date: effective("date") || prev.CR?.date,
       owner_name: effective("owner_name") || prev.CR?.owner_name,
       owner_address: effective("owner_address") || prev.CR?.owner_address,
-      engine_no: effective("engine_no") || prev.CR?.engine_no,
-      chassis_no: effective("chassis_no") || prev.CR?.chassis_no,
       plate_number: effective("plate_number") || prev.CR?.plate_number,
-      make: effective("make") || prev.CR?.make,
+      make: (modalForm.make === "Other" && (modalForm.make_other ?? "").trim()) ? modalForm.make_other.trim() : (effective("make") || prev.CR?.make),
       year_model: effective("year_model") || prev.CR?.year_model,
       body_type: effective("body_type") || prev.CR?.body_type,
       piston_displacement: effective("piston_displacement") || prev.CR?.piston_displacement,
@@ -2148,11 +2343,9 @@ const fileInputRef = useRef(null);
     cr_date: effective("date") || prev.cr_date,
     cr_owner_name: effective("owner_name") || prev.cr_owner_name,
     cr_owner_address: effective("owner_address") || prev.cr_owner_address,
-    cr_engine_no: effective("engine_no") || prev.cr_engine_no,
-    cr_chassis_no: effective("chassis_no") || prev.cr_chassis_no,
     cr_plate_number: modalForm.plate_number_blank_or_temp ? "" : (effective("plate_number") || prev.cr_plate_number),
     cr_plate_number_blank_or_temp: modalForm.plate_number_blank_or_temp ?? prev.cr_plate_number_blank_or_temp,
-    cr_make: effective("make") || prev.cr_make,
+    cr_make: (modalForm.make === "Other" && (modalForm.make_other ?? "").trim()) ? modalForm.make_other.trim() : (effective("make") || prev.cr_make),
     cr_year_model: effective("year_model") || prev.cr_year_model,
     cr_body_type: effective("body_type") || prev.cr_body_type,
     cr_piston_displacement: effective("piston_displacement") || prev.cr_piston_displacement,
@@ -2172,9 +2365,15 @@ const fileInputRef = useRef(null);
   setPendingExtractedData(null);
   setModalForm({
    file_number: "", expiration_date: "", date: "", owner_name: "", owner_address: "",
-   engine_no: "", chassis_no: "", plate_number: "", plate_number_blank_or_temp: false,
-   make: "", year_model: "", body_type: "", piston_displacement: "",
+   plate_number: "", plate_number_blank_or_temp: false,
+   make: "", year_model: "", body_type: "", body_type_other: "", make_other: "", piston_displacement: "",
   });
+  setPhAddress({
+   regions: [], provinces: [], cities: [], barangays: [],
+   regionCode: "", regionName: "", provinceCode: "", provinceName: "",
+   cityCode: "", cityName: "", barangayCode: "", barangayName: "", street: "", loading: false,
+  });
+  setShowPhAddressModal(false);
   setCurrentDocIndex((i) => i + 1);
  };
 
@@ -2252,6 +2451,7 @@ const fileInputRef = useRef(null);
         onClick={() => {
          setShowDocFullscreen(false);
          setShowDocModal(false);
+         setShowPhAddressModal(false);
          setModalFile(null);
          setModalDocType(null);
          extractedPayloadRef.current = null;
@@ -2264,11 +2464,10 @@ const fileInputRef = useRef(null);
        </button>
       </div>
        <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-       <div className="flex-shrink-0 md:w-1/2 p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-gray-200 bg-gray-50/50">
-        <p className="text-sm font-medium text-gray-700 mb-2">Uploaded document</p>
-        <div className="w-full flex items-center justify-center border rounded bg-gray-100 min-h-[200px] max-h-[50vh]">
+       <div className="flex-shrink-0 md:w-1/2 min-h-0 flex flex-col border-b md:border-b-0 md:border-r border-gray-200 bg-gray-50/50">
+        <div className="flex-1 min-h-0 flex items-center justify-center p-2">
          <div
-          className="cursor-zoom-in inline-flex items-center justify-center p-2"
+          className="cursor-zoom-in w-full h-full flex items-center justify-center"
           onClick={handleDocPreviewClick}
           role="button"
           tabIndex={0}
@@ -2278,18 +2477,17 @@ const fileInputRef = useRef(null);
           <img
            src={URL.createObjectURL(modalFile)}
            alt={DOC_LABELS[modalDocType]}
-           className="max-h-[360px] w-auto border rounded object-contain select-none pointer-events-none"
+           className="max-w-full max-h-full w-auto h-auto object-contain select-none pointer-events-none"
            draggable={false}
           />
          </div>
         </div>
-        <p className="text-xs text-gray-500 mt-1">Click image for fullscreen</p>
        </div>
-       <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4">
+       <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {(() => {
          const pd = extractedPayloadRef.current || pendingExtractedData?.payload || pendingExtractedData;
          const hasExtractedData = pd && (modalDocType === "CR"
-          ? (pd.file_number || pd.owner_name || pd.date || pd.plate_number || pd.make || pd.engine_no || pd.chassis_no)
+          ? (pd.file_number || pd.owner_name || pd.plate_number || pd.year_model || pd.piston_displacement)
           : (pd.file_number || pd.expiration_date));
          const f = (key) => {
           const v = modalForm[key];
@@ -2301,122 +2499,51 @@ const fileInputRef = useRef(null);
           <>
         <p className="text-sm font-medium text-gray-700">
          {hasExtractedData
-          ? "User-assisted: fields were filled from your document. Please review and correct any errors or add missing information, then click Proceed."
+          ? "Fields were filled from your document. Please review and correct any errors or add missing information, then click Proceed."
           : "No data was extracted from your document. Please enter the details manually."}
         </p>
-        {(modalDocType === "CR" || modalDocType === "OR") && (
+        {modalDocType === "OR" && (
          <div>
-          <label className="block text-sm text-gray-600 mb-1">
-           {modalDocType === "CR" ? "MV file number" : "File number"}
-          </label>
+          <label className="block text-sm text-gray-600 mb-1">File number</label>
           <input
            type="text"
             value={f("file_number")}
            onChange={(e) => setModalForm((prev) => ({ ...prev, file_number: e.target.value }))}
            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-           placeholder={modalDocType === "CR" ? "e.g. 1501-00000342937" : "e.g. 150100000342937"}
+           placeholder="e.g. 150100000342937"
           />
          </div>
         )}
         {modalDocType === "CR" && (
-         <>
+         <div className="space-y-4">
           <div>
-           <label className="block text-sm text-gray-600 mb-1">Date (CR upper right)</label>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Owner&apos;s name</label>
            <input
             type="text"
-            value={f("date")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, date: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            placeholder="e.g. YYYY/MM/DD"
-           />
-          </div>
-          <div>
-           <label className="block text-sm text-gray-600 mb-1">Owner&apos;s name</label>
-           <input
-            type="text"
-            value={f("owner_name")}
+            value={modalForm.owner_name ?? ""}
             onChange={(e) => setModalForm((prev) => ({ ...prev, owner_name: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            placeholder="From CR"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            placeholder="Firstname, Middlename, Lastname"
            />
           </div>
           <div>
-           <label className="block text-sm text-gray-600 mb-1">Owner&apos;s address</label>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Owner&apos;s address</label>
            <input
             type="text"
-            value={f("owner_address")}
+            value={modalForm.owner_address ?? ""}
             onChange={(e) => setModalForm((prev) => ({ ...prev, owner_address: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            placeholder="From CR"
+            onClick={() => setShowPhAddressModal(true)}
+            readOnly
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white cursor-pointer"
            />
           </div>
           <div>
-           <label className="block text-sm text-gray-600 mb-1">Engine no.</label>
-           <input
-            type="text"
-            value={f("engine_no")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, engine_no: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            placeholder="From CR"
-           />
-          </div>
-          <div>
-           <label className="block text-sm text-gray-600 mb-1">Chassis no.</label>
-           <input
-            type="text"
-            value={f("chassis_no")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, chassis_no: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            placeholder="From CR"
-           />
-          </div>
-          <div>
-           <label className="block text-sm text-gray-600 mb-1">Make</label>
-           <input
-            type="text"
-            value={f("make")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, make: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            placeholder="e.g. Honda, Yamaha"
-           />
-          </div>
-          <div>
-           <label className="block text-sm text-gray-600 mb-1">Year model</label>
-           <input
-            type="text"
-            value={f("year_model")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, year_model: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            placeholder="e.g. 2023"
-           />
-          </div>
-          <div>
-           <label className="block text-sm text-gray-600 mb-1">Body type</label>
-           <input
-            type="text"
-            value={f("body_type")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, body_type: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            placeholder="e.g. Sedan, Motorcycle"
-           />
-          </div>
-          <div>
-           <label className="block text-sm text-gray-600 mb-1">Piston displacement</label>
-           <input
-            type="text"
-            value={f("piston_displacement")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, piston_displacement: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            placeholder="e.g. 150cc, 1.5L"
-           />
-          </div>
-          <div>
-           <label className="block text-sm text-gray-600 mb-1">Plate number</label>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Plate number</label>
            <input
             type="text"
             value={f("plate_number")}
             onChange={(e) => setModalForm((prev) => ({ ...prev, plate_number: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:bg-gray-50 disabled:opacity-70"
             placeholder="Leave blank if not on CR"
             disabled={modalForm.plate_number_blank_or_temp}
            />
@@ -2425,22 +2552,139 @@ const fileInputRef = useRef(null);
            <input
             type="checkbox"
             checked={modalForm.plate_number_blank_or_temp}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, plate_number_blank_or_temp: e.target.checked }))}
-            className="w-4 h-4 rounded border-gray-300"
+            onChange={(e) => setModalForm((prev) => ({ ...prev, plate_number_blank_or_temp: e.target.checked, plate_number: e.target.checked ? "" : prev.plate_number }))}
+            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20"
            />
-           <span className="text-sm text-gray-600">Plate number on CR is blank or temporary</span>
+           <span className="text-sm text-gray-700">Plate number on CR is blank or temporary</span>
           </label>
-         </>
+          <div>
+           <label className="block text-sm font-medium text-gray-700 mb-1">MV file number</label>
+           <input
+            type="text"
+            value={f("file_number")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, file_number: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            placeholder="e.g. 150100000342937"
+           />
+          </div>
+          <div>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Date issued</label>
+           <input
+            type="date"
+            value={f("date")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, date: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+           />
+          </div>
+          <div>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Year model</label>
+           <input
+            type="text"
+            value={f("year_model")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, year_model: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            placeholder="e.g. 2023"
+           />
+          </div>
+          <div>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
+           <select
+            value={f("make")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, make: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+           >
+            <option value="">Select make/brand</option>
+            {(() => {
+            const makes = [
+             // Common car brands
+             "Toyota", "Honda", "Nissan", "Mitsubishi", "Ford", "Isuzu", "Hyundai", "Kia", "Suzuki",
+             "Mazda", "Chevrolet", "Fuso", "Hino", "Foton", "JAC", "BMW", "Mercedes-Benz", "Audi",
+             "Volkswagen", "Subaru",
+             // Common motorcycle brands
+             "Yamaha", "Kawasaki", "KTM", "Rusi", "Skygo", "Motorstar", "Bajaj", "TVS", "Vespa",
+             "Royal Enfield", "Kymco", "SYM", "Keeway",
+             "Other",
+            ];
+             const current = f("make");
+             const hasOther = current && !makes.includes(current);
+             return (
+              <>
+               {makes.map((m) => (
+                <option key={m} value={m}>{m}</option>
+               ))}
+               {hasOther && <option value={current}>{current} (from document)</option>}
+              </>
+             );
+            })()}
+           </select>
+          </div>
+          {f("make") === "Other" && (
+          <div>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Specify make (optional)</label>
+           <input
+            type="text"
+            value={modalForm.make_other ?? ""}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, make_other: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            placeholder="e.g. Rare brand name"
+           />
+          </div>
+          )}
+          <div>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Body type</label>
+           <select
+            value={f("body_type")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, body_type: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+           >
+            <option value="">Select body type</option>
+            {(() => {
+             const bodyTypes = ["Sedan", "SUV", "Hatchback", "Wagon", "Van", "Pickup", "Truck", "Motorcycle", "Tricycle", "Jeepney", "Other"];
+             const current = f("body_type");
+             const hasOther = current && !bodyTypes.includes(current);
+             return (
+              <>
+               {bodyTypes.map((bt) => (
+                <option key={bt} value={bt}>{bt}</option>
+               ))}
+               {hasOther && <option value={current}>{current} (from document)</option>}
+              </>
+             );
+            })()}
+           </select>
+          </div>
+          {f("body_type") === "Other" && (
+          <div>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Specify body type (optional)</label>
+           <input
+            type="text"
+            value={modalForm.body_type_other ?? ""}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, body_type_other: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            placeholder="e.g. Coupe, MPV"
+           />
+          </div>
+          )}
+          <div>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Displacement</label>
+           <input
+            type="text"
+            value={modalForm.piston_displacement ?? ""}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, piston_displacement: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            placeholder="e.g. 150cc"
+           />
+          </div>
+         </div>
         )}
         {(modalDocType === "OR" || modalDocType === "DL") && (
          <div>
           <label className="block text-sm text-gray-600 mb-1">Expiration date</label>
           <input
-           type="text"
+           type={modalDocType === "OR" ? "month" : "date"}
            value={f("expiration_date")}
            onChange={(e) => setModalForm((prev) => ({ ...prev, expiration_date: e.target.value }))}
            className="w-full px-3 py-2 border border-gray-300 rounded-md"
-           placeholder={modalDocType === "OR" ? "MM/YYYY" : "YYYY/MM/DD"}
           />
          </div>
         )}
@@ -2460,8 +2704,128 @@ const fileInputRef = useRef(null);
     </div>
    )}
 
+   {showPhAddressModal && (
+    <div
+     className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+     onClick={(e) => e.target === e.currentTarget && setShowPhAddressModal(false)}
+     role="dialog"
+     aria-modal="true"
+     aria-label="Quick address (Philippine locations)"
+    >
+     <div className="bg-white rounded-lg w-full max-w-lg shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div className="p-4 border-b flex justify-between items-center">
+       <h3 className="text-lg font-bold text-primary">Quick address</h3>
+       <button
+        type="button"
+        onClick={() => setShowPhAddressModal(false)}
+        className="text-gray-500 hover:text-gray-700 p-1"
+        aria-label="Close"
+       >
+        <IoClose size={24} />
+       </button>
+      </div>
+      <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+       <p className="text-sm text-gray-600">Select location, then click OK to confirm.</p>
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">Region</label>
+        <select
+         value={phAddress.regionCode}
+         onChange={(e) => {
+          const o = e.target.options[e.target.selectedIndex];
+          handlePhRegionChange(e.target.value, o?.text ?? "");
+         }}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         disabled={phAddress.loading}
+        >
+         <option value="">Select region</option>
+         {phAddress.regions.map((r) => (
+          <option key={r.code} value={r.code}>{r.name}</option>
+         ))}
+        </select>
+       </div>
+       {phAddress.provinces.length > 0 && (
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">Province</label>
+        <select
+         value={phAddress.provinceCode}
+         onChange={(e) => {
+          const o = e.target.options[e.target.selectedIndex];
+          handlePhProvinceChange(e.target.value, o?.text ?? "");
+         }}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        >
+         <option value="">Select province</option>
+         {phAddress.provinces.map((p) => (
+          <option key={p.code} value={p.code}>{p.name}</option>
+         ))}
+        </select>
+       </div>
+       )}
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">City / Municipality</label>
+        <select
+         value={phAddress.cityCode}
+         onChange={(e) => {
+          const o = e.target.options[e.target.selectedIndex];
+          handlePhCityChange(e.target.value, o?.text ?? "");
+         }}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         disabled={phAddress.cities.length === 0}
+        >
+         <option value="">Select city/municipality</option>
+         {phAddress.cities.map((c) => (
+          <option key={c.code} value={c.code}>{c.name}{c.zip_code ? ` (${c.zip_code})` : ""}</option>
+         ))}
+        </select>
+       </div>
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">Barangay</label>
+        <select
+         value={phAddress.barangayCode}
+         onChange={(e) => {
+          const o = e.target.options[e.target.selectedIndex];
+          handlePhBarangayChange(e.target.value, o?.text ?? "");
+         }}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         disabled={phAddress.barangays.length === 0}
+        >
+         <option value="">Select barangay</option>
+         {phAddress.barangays.map((b) => (
+          <option key={b.code} value={b.code}>{b.name}</option>
+         ))}
+        </select>
+       </div>
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">Street / Sitio / Building (optional)</label>
+        <input
+         type="text"
+         value={phAddress.street}
+         onChange={(e) => handlePhStreetChange(e.target.value)}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         placeholder="e.g. Purok 5, Bldg name"
+        />
+       </div>
+      </div>
+      <div className="p-4 border-t flex justify-end">
+       <button
+        type="button"
+        onClick={() => {
+         const str = buildPhAddressString(phAddress);
+         setModalForm((prev) => ({ ...prev, owner_address: str }));
+         setShowPhAddressModal(false);
+        }}
+        className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:opacity-90"
+       >
+        OK
+       </button>
+      </div>
+     </div>
+    </div>
+   )}
+
    {showDocFullscreen && modalFile && (
     <div
+     ref={fullscreenOverlayRef}
      className="fixed inset-0 bg-black/90 flex flex-col z-[60]"
      onClick={(e) => e.target === e.currentTarget && setShowDocFullscreen(false)}
      role="dialog"
@@ -2508,14 +2872,20 @@ const fileInputRef = useRef(null);
        <IoClose size={24} />
       </button>
      </div>
-     <div className="flex-1 overflow-auto flex items-center justify-center p-4 min-h-0">
+     <div
+      className={`flex-1 overflow-hidden flex items-center justify-center p-4 min-h-0 select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${fullscreenPanning ? "cursor-grabbing" : "cursor-grab"}`}
+      style={{ overscrollBehavior: "none" }}
+      onMouseDown={handleFullscreenPanStart}
+     >
       <img
        src={URL.createObjectURL(modalFile)}
        alt={DOC_LABELS[modalDocType]}
-       className="max-w-full max-h-full w-auto object-contain select-none"
-       style={{ transform: `scale(${fullscreenZoom / 100})`, transformOrigin: "center center" }}
+       className="max-w-full max-h-full w-auto object-contain pointer-events-none"
+       style={{
+        transform: `translate(${fullscreenPan.x}px, ${fullscreenPan.y}px) scale(${fullscreenZoom / 100})`,
+        transformOrigin: "center center",
+       }}
        draggable={false}
-       onClick={(e) => e.stopPropagation()}
       />
      </div>
     </div>
@@ -2598,7 +2968,7 @@ const Step5ConfirmDetails = ({
        OR expiration (MM/YYYY)
       </label>
       <input
-       type="text"
+       type="month"
        value={confirmedDocDetails.or_expiration ?? ""}
        onChange={(e) =>
         setConfirmedDocDetails((prev) => ({
@@ -2607,7 +2977,6 @@ const Step5ConfirmDetails = ({
         }))
        }
        className="w-full px-3 py-2 border border-gray-300 rounded-md"
-       placeholder={fromOcr("or_expiration") ? "" : "Not extracted – please enter (e.g. 07/2026)"}
       />
       {fromOcr("or_expiration") && (
        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
@@ -2618,7 +2987,7 @@ const Step5ConfirmDetails = ({
        DL expiration (YYYY/MM/DD)
       </label>
       <input
-       type="text"
+       type="date"
        value={confirmedDocDetails.dl_expiration ?? ""}
        onChange={(e) =>
         setConfirmedDocDetails((prev) => ({
@@ -2627,7 +2996,6 @@ const Step5ConfirmDetails = ({
         }))
        }
        className="w-full px-3 py-2 border border-gray-300 rounded-md"
-       placeholder={fromOcr("dl_expiration") ? "" : "Not extracted – please enter (e.g. 2033/11/06)"}
       />
       {fromOcr("dl_expiration") && (
        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
