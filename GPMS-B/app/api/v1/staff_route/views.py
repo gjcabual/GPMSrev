@@ -77,7 +77,7 @@ class StaffView:
         if not latest_status:
             raise HTTPException(status_code=404, detail="Application not found")
 
-        if latest_status.status != "Pending":
+        if latest_status.status not in ("Pending", "Waiting for approval"):
             raise HTTPException(
                 status_code=400,
                 detail=f"This application has already been {latest_status.status.lower()}."
@@ -172,7 +172,7 @@ class StaffView:
         return application
 
     async def get_pending_applications(self):
-        """Get all applications where the latest status is Pending"""
+        """Get all applications where the latest status is Pending or Waiting for approval"""
         
         # Subquery to get the latest status_id for each application
         latest_status_subquery = (
@@ -191,7 +191,7 @@ class StaffView:
                   Application.application_id == latest_status_subquery.c.application_id)
             .join(ApplicationStatus,
                   ApplicationStatus.status_id == latest_status_subquery.c.latest_status_id)
-            .where(ApplicationStatus.status == "Pending")
+            .where(ApplicationStatus.status.in_(["Pending", "Waiting for approval"]))
             .options(
                 joinedload(Application.user).joinedload(User.profiles),
                 joinedload(Application.vehicle),

@@ -234,7 +234,29 @@ useEffect(() => {
   }
  };
 
+ const getMissingConfirmedDetailFields = () => {
+  const requiredFields = [
+   { key: "cr_file_number", label: "CR file number" },
+   { key: "cr_owner_name", label: "CR owner's name" },
+   { key: "or_file_number", label: "OR file number" },
+   { key: "or_expiration", label: "OR expiration" },
+   { key: "dl_expiration", label: "DL expiration" },
+  ];
+
+  return requiredFields
+   .filter(({ key }) => String(confirmedDocDetails?.[key] ?? "").trim() === "")
+   .map(({ label }) => label);
+ };
+
  const handleSubmit = async () => {
+  const missingConfirmedFields = getMissingConfirmedDetailFields();
+  if (missingConfirmedFields.length > 0) {
+   toast.error(
+    `Please fill in all required confirmation fields: ${missingConfirmedFields.join(", ")}.`
+   );
+   return;
+  }
+
   // Remove driver selection requirement from validation
   if (!selected || !vehicleData) {
    toast.error("Missing required information. Please check all fields.");
@@ -702,7 +724,11 @@ useEffect(() => {
        <button
         className="bg-primary h-10 px-4 rounded-md text-white font-medium disabled:bg-gray-300 flex items-center gap-2 cursor-pointer"
         onClick={handleSubmit}
-        disabled={isSubmitting || (currentStep === 4 && !detailsConfirmed)}
+        disabled={
+         isSubmitting ||
+         (currentStep === 4 &&
+          (!detailsConfirmed || getMissingConfirmedDetailFields().length > 0))
+        }
        >
         {isSubmitting ? (
          <>
@@ -710,9 +736,9 @@ useEffect(() => {
           Creating...
          </>
         ) : (
-         "Create Application"
-        )}
-       </button>
+          "Submit"
+         )}
+        </button>
       ) : (
        // Only show next button if not on step 2 (verification step)
        currentStep !== 1 && (
@@ -2592,7 +2618,7 @@ const fileInputRef = useRef(null);
         };
          return (
           <>
-        <p className="text-sm font-medium text-gray-700">
+        <p className="text-sm font-medium text-blue-600 mb-3">
          {hasExtractedData
           ? "Fields were filled from your document. Please review and correct any errors or add missing information, then click Proceed."
           : "No data was extracted from your document. Please enter the details manually."}
@@ -3019,7 +3045,7 @@ const Step5ConfirmDetails = ({
      Please review, correct any errors, or add missing information, then confirm and submit.
     </p>
 
-    <div className="space-y-6">
+     <div className="space-y-6 mt-2">
      {/* CR section */}
      <div className="space-y-3">
       <h2 className="text-sm font-semibold text-gray-800">Certificate of Registration (CR)</h2>
@@ -3040,7 +3066,7 @@ const Step5ConfirmDetails = ({
         placeholder={fromOcr("cr_file_number") ? "" : "Not extracted – please enter (e.g. 1501-00000342937)"}
        />
        {fromOcr("cr_file_number") && (
-        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+         <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>
        )}
       </div>
       <div>
@@ -3057,10 +3083,10 @@ const Step5ConfirmDetails = ({
          }))
         }
         className="w-full px-3 py-2 border border-gray-300 rounded-md"
-        placeholder={fromOcr("cr_owner_name") ? "" : "Not extracted – please enter owner&apos;s full name"}
+        placeholder={fromOcr("cr_owner_name") ? "" : "Not extracted – please enter owner's full name"}
        />
        {fromOcr("cr_owner_name") && (
-        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+         <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>
        )}
       </div>
      </div>
@@ -3085,7 +3111,7 @@ const Step5ConfirmDetails = ({
         placeholder={fromOcr("or_file_number") ? "" : "Not extracted – please enter (e.g. 150100000342937)"}
        />
        {fromOcr("or_file_number") && (
-        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+         <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>
        )}
       </div>
       <div>
@@ -3104,7 +3130,7 @@ const Step5ConfirmDetails = ({
         className="w-full px-3 py-2 border border-gray-300 rounded-md"
        />
        {fromOcr("or_expiration") && (
-        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+         <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>
        )}
       </div>
      </div>
@@ -3128,7 +3154,7 @@ const Step5ConfirmDetails = ({
         className="w-full px-3 py-2 border border-gray-300 rounded-md"
        />
        {fromOcr("dl_expiration") && (
-        <p className="text-xs text-gray-500 mt-0.5">Filled from your document – edit if wrong.</p>
+         <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>
        )}
       </div>
      </div>

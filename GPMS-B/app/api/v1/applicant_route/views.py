@@ -244,6 +244,8 @@ class ApplicantView:
         self, 
         application_ids: List[int], 
         slip_image: bytes,
+        official_receipt: str,
+        paid_amount: Optional[float],
         user_id: UUID
     ):
         """Submit applications to pending status with payment slip"""
@@ -251,6 +253,8 @@ class ApplicantView:
             return await self.controller.submit_specific_applications_to_pending(
                 application_ids=application_ids,
                 slip_image=slip_image,
+                official_receipt=official_receipt,
+                paid_amount=paid_amount,
                 user_id=user_id
             )
         except Exception as e:

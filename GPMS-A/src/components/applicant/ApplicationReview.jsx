@@ -117,7 +117,6 @@ export const ApplicationReview = ({
  const nav = useNavigate();
  const [data, setData] = useState(null);
  const [loading, setLoading] = useState(true);
- const [confirmed, setConfirmed] = useState(false);
 
  const { id } = useParams();
 
@@ -219,43 +218,24 @@ export const ApplicationReview = ({
         <AuthorizedDriver data={data?.applicant?.driver} />
        </div>
 
-       <div className="mt-6 sm:mt-8 md:mt-10 text-center">
-        <div className="mb-4 sm:mb-5">
-         <hr />
-        </div>
+        <div className="mt-6 sm:mt-8 md:mt-10 text-center">
+         <div className="mb-4 sm:mb-5">
+          <hr />
+         </div>
 
-        {!isFromLog ? (
-         <>
-          <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-4 mt-4 sm:mt-5">
-           <button
-            onClick={() => nav("/applicant/dashboard")}
-            disabled={!confirmed}
-            className={`bg-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium ${
-             confirmed
-              ? "hover:bg-primary/90 text-white"
-              : "bg-primary/50 cursor-not-allowed text-white/80"
-            }`}
-           >
-            Continue
-           </button>
-          </div>
+         {!isFromLog ? (
+          <>
 
-          <div className="mt-3 sm:mt-5 flex items-center justify-center gap-1">
-           <input
-            type="checkbox"
-            id="confirm-review"
-            className="accent-primary h-4 w-4"
-            checked={confirmed}
-            onChange={() => setConfirmed(!confirmed)}
-           />
-           <label
-            htmlFor="confirm-review"
-            className="text-xs sm:text-sm font-light text-gray-500"
-           >
-            I confirm that I have reviewed and agree that the data entered is
-            accurate and complete.
-           </label>
-          </div>
+           <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-4 mt-4 sm:mt-5">
+            <button
+             onClick={() => nav("/applicant/dashboard")}
+             className="bg-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium hover:bg-primary/90 text-white"
+            >
+             Continue
+            </button>
+           </div>
+
+          
          </>
         ) : null}
        </div>

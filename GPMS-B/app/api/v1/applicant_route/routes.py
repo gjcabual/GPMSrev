@@ -33,6 +33,8 @@ from .controller import ApplicantController
 
 from app.utils.document_ocr_utils import document_type
 from app.core.ocr_doc_validator import validate_document
+from app.utils.tesseract_ocr_utils import get_text_from_image
+import re
 
 
 def _safe_unlink(path: Optional[str]) -> None:
@@ -66,6 +68,55 @@ def _normalize_file_number(s: Optional[str]) -> str:
     if not s or not isinstance(s, str):
         return (s or "").strip()
     return s.replace(" ", "").replace("-", "").replace("—", "").replace("–", "").strip()
+
+
+def _extract_or_number_from_text(text: str) -> Optional[str]:
+    if not text:
+        return None
+
+    patterns = [
+        r"(?i)(?:official\s*receipt|o\.?\s*r\.?)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Z0-9\-]{5,25})",
+        r"(?i)\bOR\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Z0-9\-]{5,25})",
+        r"\b\d{4}-\d{12}\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1) if match.lastindex else match.group(0)
+
+    fallback = re.search(r"\b\d{7,16}\b", text)
+    return fallback.group(0) if fallback else None
+
+
+def _extract_amount_from_text(text: str) -> Optional[float]:
+    if not text:
+        return None
+
+    primary_patterns = [
+        r"(?i)(?:total\s*(?:amount)?\s*(?:paid|due)?|amount\s*paid|grand\s*total)\s*[:\-]?\s*(?:PHP|P|₱)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
+        r"(?i)(?:PHP|P|₱)\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
+    ]
+
+    for pattern in primary_patterns:
+        match = re.search(pattern, text)
+        if match:
+            try:
+                return float(match.group(1).replace(",", ""))
+            except ValueError:
+                pass
+
+    all_amounts = re.findall(r"\b([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})|[0-9]+(?:\.[0-9]{1,2}))\b", text)
+    numeric_amounts = []
+    for raw in all_amounts:
+        try:
+            value = float(raw.replace(",", ""))
+            if value > 0:
+                numeric_amounts.append(value)
+        except ValueError:
+            continue
+
+    return max(numeric_amounts) if numeric_amounts else None
 
 
 @router.post("/application/extract")
@@ -1065,11 +1116,46 @@ async def delete_driver_from_application(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/application/extract-slip", response_model=dict)
+async def extract_slip_details(
+    slip_image: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """Extract official receipt number and amount from uploaded cashier receipt."""
+    temp_path = None
+    try:
+        suffix = os.path.splitext(slip_image.filename or "")[1] or ".jpg"
+        with tempfile.NamedTemporaryFile(delete=False, prefix="gpms_extract_slip_", suffix=suffix) as f:
+            f.write(await slip_image.read())
+            temp_path = f.name
+
+        extracted_text = get_text_from_image(temp_path)
+        official_receipt = _extract_or_number_from_text(extracted_text)
+        amount = _extract_amount_from_text(extracted_text)
+
+        return {
+            "official_receipt": official_receipt,
+            "amount": amount,
+            "ocr_text_found": bool(extracted_text and extracted_text.strip()),
+        }
+    except Exception as e:
+        logger.warning("Slip OCR extraction failed: %s", e)
+        return {
+            "official_receipt": None,
+            "amount": None,
+            "ocr_text_found": False,
+        }
+    finally:
+        _safe_unlink(temp_path)
+
+
 @router.post("/applications/submit-pending", response_model=dict)
 async def submit_applications_to_pending(
     application_ids: str = Form(..., description="Comma-separated application IDs"),
     slip_image: UploadFile = File(..., description="Payment slip image"),
     official_receipt: str = Form(..., description="Official receipt number (XXXX-XXXXXXXXXXXX)"),  # Add this parameter
+    amount: Optional[float] = Form(None, description="Amount from cashier receipt"),
     db: AsyncSession = Depends(get_db),
     current_user: UserInDB = Depends(get_current_applicant)
 ):
@@ -1086,6 +1172,7 @@ async def submit_applications_to_pending(
             application_ids=id_list, 
             slip_image=contents,
             official_receipt=official_receipt,  # Pass the receipt number
+            paid_amount=amount,
             user_id=current_user.user_id
         )
         

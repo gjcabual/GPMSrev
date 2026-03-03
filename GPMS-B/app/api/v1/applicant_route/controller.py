@@ -1491,6 +1491,7 @@ class ApplicantController:
         application_ids: List[int], 
         slip_image: bytes,
         official_receipt: str,  # Add this parameter
+        paid_amount: Optional[float],
         user_id: UUID
     ) -> dict:
         try:
@@ -1536,7 +1537,7 @@ class ApplicantController:
             current_date = datetime.now().date()  
             
             slip = Slip(
-                total_amount=0,  # Will update after processing all applications
+                total_amount=0,  # Set after processing all applications / paid amount
                 nature_of_payment="Parking Sticker Application",
                 date=current_date,
                 image=slip_image,
@@ -1624,8 +1625,11 @@ class ApplicantController:
 
                     next_num += 1
 
-            # Update slip total amount
-            slip.total_amount = total_amount
+            # Update slip total amount: use cashier amount when provided, else computed amount.
+            if paid_amount is not None and paid_amount > 0:
+                slip.total_amount = float(paid_amount)
+            else:
+                slip.total_amount = float(total_amount)
             slip.nature_of_payment = f"Parking Sticker Application ({', '.join(role_groups.keys())})"
             
             await self.db.commit()
@@ -1647,7 +1651,7 @@ class ApplicantController:
                 "message": f"Successfully submitted {len(submitted_apps)} applications",
                 "submitted_applications": submitted_apps,
                 "slip_id": slip.slip_id,
-                "total_amount": total_amount
+                "total_amount": slip.total_amount
             }
 
         except HTTPException as he:

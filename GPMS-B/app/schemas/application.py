@@ -207,6 +207,7 @@ class ApplicationListResponse(BaseModel):
     brand: str
     application_role: str
     vehicle_type: str
+    status: str
     front_image: Optional[str] = None
     back_image: Optional[str] = None
 

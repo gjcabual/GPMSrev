@@ -2,10 +2,12 @@ import React from "react";
 import ReactApexChart from "react-apexcharts";
 
 const DonutChartv2 = ({ data }) => {
- const total = data.approved + data.pending;
+ const approved = Number(data?.approved ?? 0);
+ const pending = Number(data?.pending ?? 0);
+ const total = approved + pending;
 
  const chartOptions = {
-  series: total > 0 ? [data.approved, data.pending] : [1, 0], // Prevent division by zero
+  series: total > 0 ? [approved, pending] : [0, 0],
   colors: ["#0F4C5C", "#D6D3D1"],
   chart: { type: "donut" },
   stroke: { colors: ["white"] },
@@ -66,11 +68,11 @@ const DonutChartv2 = ({ data }) => {
     <div className="flex flex-col space-y-2 pr-4">
      <div className="flex items-center space-x-2">
       <span className="w-4 h-4 bg-[#0F4C5C] rounded-full"></span>
-      <span className="text-gray-700 text-sm">Amount Collected: {data.approved}</span>
+      <span className="text-gray-700 text-sm">Amount Collected: {approved}</span>
      </div>
      <div className="flex items-center space-x-2">
       <span className="w-4 h-4 bg-[#D6D3D1] rounded-full"></span>
-      <span className="text-gray-700 text-sm">Pending Amount: {data.pending}</span>
+      <span className="text-gray-700 text-sm">Pending Amount: {pending}</span>
      </div>
     </div>
 

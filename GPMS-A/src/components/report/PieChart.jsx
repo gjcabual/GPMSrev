@@ -17,6 +17,23 @@ const PieChart = ({ data }) => {
   chart: {
    type: "pie",
   },
+  tooltip: {
+   y: {
+    formatter: (val) => `${val}`,
+   },
+  },
+  states: {
+   hover: {
+    filter: {
+     type: "none",
+    },
+   },
+   active: {
+    filter: {
+     type: "none",
+    },
+   },
+  },
   stroke: {
    colors: ["white"],
    width: 2,
@@ -31,13 +48,12 @@ const PieChart = ({ data }) => {
     colors: ["#ffffff"],
    },
    textAnchor: "middle",
-   distributed: true,
    offsetX: 0,
    offsetY: 0,
-   position: "center",
   },
   plotOptions: {
    pie: {
+    expandOnClick: false,
     dataLabels: {
      offset: -20, // Negative value moves labels toward center
      minAngleToShowLabel: 10,

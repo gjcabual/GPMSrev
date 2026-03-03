@@ -23,6 +23,7 @@ from app.schemas.dashboard import (
 class DashboardController:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.pending_like_statuses = ("Pending", "Waiting for approval")
 
     async def get_application_status_counts(self) -> ApplicationStatusCounts:
         try:
@@ -56,7 +57,10 @@ class DashboardController:
             status_counts_dict = {
                 'total_approved': next((count for status, count in status_counts if status == 'Approved'), 0),
                 'total_rejected': next((count for status, count in status_counts if status == 'Rejected'), 0),
-                'total_pending': next((count for status, count in status_counts if status == 'Pending'), 0)
+                'total_pending': sum(
+                    count for status, count in status_counts
+                    if status in self.pending_like_statuses
+                )
             }
             return ApplicationStatusCounts(**status_counts_dict)
         except Exception as e:
@@ -326,7 +330,7 @@ class DashboardController:
                 .subquery()
             )
 
-            # Get applications with latest status "Pending"
+            # Get applications with latest status pending-like (Pending / Waiting for approval)
             pending_applications = (
                 select(
                     Application.application_id,
@@ -345,7 +349,7 @@ class DashboardController:
                 )
                 .join(Application, ApplicationStatus.application_id == Application.application_id)
                 .join(Vehicle, Application.plate_no == Vehicle.plate_no)
-                .where(ApplicationStatus.status == 'Pending')
+                .where(ApplicationStatus.status.in_(self.pending_like_statuses))
             )
 
             # Add vehicle type filter if specified
