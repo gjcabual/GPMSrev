@@ -700,7 +700,7 @@ useEffect(() => {
        </button>
        <button
         onClick={handleBack}
-        className="text-sm font-light text-gray-500 cursor-pointer"
+        className="text-sm font-light text-gray-500 hover:text-primary transition-colors cursor-pointer"
        >
         Back
        </button>
@@ -715,7 +715,7 @@ useEffect(() => {
     {!type && (
      <div className="py-5 flex gap-2">
       <button
-       className="bg-gray-500 h-10 px-4 rounded-md text-white font-medium disabled:bg-gray-300 cursor-pointer"
+       className="bg-gray-500 h-10 px-4 rounded-md text-white font-medium hover:bg-gray-600 transition-colors disabled:bg-gray-300 cursor-pointer"
        onClick={handleBack}
       >
        Back
@@ -2644,7 +2644,7 @@ const fileInputRef = useRef(null);
             value={modalForm.owner_name ?? ""}
             onChange={(e) => setModalForm((prev) => ({ ...prev, owner_name: e.target.value }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
-            placeholder="Firstname, Middlename, Lastname"
+            placeholder="Same as on the CR"
            />
           </div>
           <div>
