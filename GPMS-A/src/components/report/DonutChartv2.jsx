@@ -1,13 +1,17 @@
 import React from "react";
 import ReactApexChart from "react-apexcharts";
 
-const DonutChartv2 = ({ data }) => {
- const approved = Number(data?.approved ?? 0);
- const pending = Number(data?.pending ?? 0);
- const total = approved + pending;
+const DonutChartv2 = ({ data, applicationStatus }) => {
+ const approvedAmount = Number(data?.approved ?? 0);
+ const pendingAmount = Number(data?.pending ?? 0);
+
+ // Use the same source as "Total Applications" for transaction counts.
+ const approvedTx = Number(applicationStatus?.total_approved ?? 0);
+ const pendingTx = Number(applicationStatus?.total_pending ?? 0);
+ const totalTx = approvedTx + pendingTx;
 
  const chartOptions = {
-  series: total > 0 ? [approved, pending] : [0, 0],
+  series: totalTx > 0 ? [approvedTx, pendingTx] : [0, 0],
   colors: ["#0F4C5C", "#D6D3D1"],
   chart: { type: "donut" },
   stroke: { colors: ["white"] },
@@ -16,20 +20,25 @@ const DonutChartv2 = ({ data }) => {
   legend: { show: false },
   tooltip: {
    enabled: true,
-   y: {
-    formatter: (val) => `${val} transactions`,
-   },
+   y: [
+    {
+     formatter: (val) => `${val} transactions | Amount: ${approvedAmount}`,
+    },
+    {
+     formatter: (val) => `${val} transactions | Amount: ${pendingAmount}`,
+    },
+   ],
   },
   plotOptions: {
    pie: {
     donut: {
-     size: "70%",
+      size: "70%",
      labels: {
       show: true,
-      total: {
+       total: {
        show: true,
        label: "Total",
-       formatter: () => `${total}`,
+       formatter: () => `${totalTx}`,
        color: "#0F4C5C",
        fontSize: "16px",
        fontWeight: 600,
@@ -68,11 +77,11 @@ const DonutChartv2 = ({ data }) => {
     <div className="flex flex-col space-y-2 pr-4">
      <div className="flex items-center space-x-2">
       <span className="w-4 h-4 bg-[#0F4C5C] rounded-full"></span>
-      <span className="text-gray-700 text-sm">Amount Collected: {approved}</span>
+      <span className="text-gray-700 text-sm">Amount Collected: {approvedAmount}</span>
      </div>
      <div className="flex items-center space-x-2">
       <span className="w-4 h-4 bg-[#D6D3D1] rounded-full"></span>
-      <span className="text-gray-700 text-sm">Pending Amount: {pending}</span>
+      <span className="text-gray-700 text-sm">Pending Amount: {pendingAmount}</span>
      </div>
     </div>
 

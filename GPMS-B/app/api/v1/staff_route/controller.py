@@ -53,6 +53,16 @@ class StaffController:
                 if doc.application_id == application.application_id:
                     application_documents.append(doc)
 
+        # Include uploaded payment slip as part of documents for staff/admin modal.
+        if hasattr(application, "slip") and application.slip and application.slip.image:
+            application_documents = [*application_documents, {
+                "document_id": application.slip.slip_id,
+                "type": "Payment Slip",
+                "image": f"/api/v1/staff/slip/{application.slip.slip_id}/image",
+                "registered_at": application.slip.date,
+                "expire_at": None,
+            }]
+
         return ApplicationDetail(
             application_id=application.application_id,
             application_role=application.role,
@@ -99,12 +109,22 @@ class StaffController:
                 ] if hasattr(application, 'assigned_drivers') else [],
                 # Use the filtered documents list instead
                 documents=[
-                    DocumentDetail(
-                        document_id=doc.document_id,  
-                        type=doc.type,
-                        image=f"/api/v1/staff/document/{doc.document_id}/image" if doc.image else None,
-                        registered_at=doc.registered_date,
-                        expire_at=doc.expired_at
+                    (
+                        DocumentDetail(
+                            document_id=doc["document_id"],
+                            type=doc["type"],
+                            image=doc["image"],
+                            registered_at=doc["registered_at"],
+                            expire_at=doc["expire_at"],
+                        )
+                        if isinstance(doc, dict)
+                        else DocumentDetail(
+                            document_id=doc.document_id,
+                            type=doc.type,
+                            image=f"/api/v1/staff/document/{doc.document_id}/image" if doc.image else None,
+                            registered_at=doc.registered_date,
+                            expire_at=doc.expired_at,
+                        )
                     )
                     for doc in application_documents
                 ]
@@ -180,10 +200,20 @@ class StaffController:
                     "application_role": app.role,
                     "vehicle_type": app.vehicle.vehicle_type if app.vehicle else "",
                     "assigned_drivers": assigned_drivers,
+                    "slip_id": app.slip.slip_id if hasattr(app, 'slip') and app.slip else None,
                     "slip_image": slip_image,
                     "slip_amount": app.slip.total_amount if hasattr(app, 'slip') and app.slip else None,
+                    "slip_official_receipt": app.slip.official_receipt if hasattr(app, 'slip') and app.slip else None,
                     "slip_date": app.slip.date.strftime("%Y-%m-%d") if hasattr(app, 'slip') and app.slip and app.slip.date else None,
                     "nature_of_payment": app.slip.nature_of_payment if hasattr(app, 'slip') and app.slip else None,
+                    "has_uploaded_receipt": bool(
+                        hasattr(app, 'slip')
+                        and app.slip
+                        and app.slip.image
+                        and app.slip.official_receipt
+                        and app.slip.total_amount is not None
+                        and float(app.slip.total_amount) > 0
+                    ),
                     "documents": application_documents,
                 }
                 pending_list.append(pending_data)

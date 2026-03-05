@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { IoMdAdd } from "react-icons/io";
 import { IoClose } from "react-icons/io5";
 import { FaUserCircle } from "react-icons/fa";
+import { BiInfoCircle } from "react-icons/bi";
 
 const steps = [
  "Personal Information",
@@ -49,6 +50,91 @@ function toMonthInputValue(str) {
  return s;
 }
 
+/** Normalize common date formats to MM/DD/YYYY for UI fields. */
+function toMMDDYYYYValue(str) {
+ if (str == null || String(str).trim() === "") return "";
+ const s = String(str).trim();
+
+ if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+ if (/^\d{2}-\d{2}-\d{4}$/.test(s)) return s.replace(/-/g, "/");
+
+ const iso = s.match(/^(\d{4})[-/](\d{2})[-/](\d{2})$/);
+ if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
+
+ const my = s.match(/^(\d{2})[-/](\d{4})$/); // MM/YYYY
+ if (my) return `${my[1]}/01/${my[2]}`;
+
+ return s;
+}
+
+function normalizeToMMYYYY(value) {
+ if (!value) return "";
+ const s = String(value).trim();
+ if (/^\d{2}\/\d{4}$/.test(s)) return s;
+
+ const mmddyyyy = s.match(/^(\d{2})\/\d{2}\/(\d{4})$/);
+ if (mmddyyyy) return `${mmddyyyy[1]}/${mmddyyyy[2]}`;
+
+ if (/^\d{4}-\d{2}$/.test(s)) {
+  const [yyyy, mm] = s.split("-");
+  return `${mm}/${yyyy}`;
+ }
+ if (/^\d{4}\/\d{2}$/.test(s)) {
+  const [yyyy, mm] = s.split("/");
+  return `${mm}/${yyyy}`;
+ }
+ if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+  const [yyyy, mm] = s.split("-");
+  return `${mm}/${yyyy}`;
+ }
+ return s;
+}
+
+function normalizeDateToISO(value) {
+ if (!value) return "";
+ const s = String(value).trim();
+ if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+ if (/^\d{4}\/\d{2}\/\d{2}$/.test(s)) return s.replace(/\//g, "-");
+ const mmddyyyy = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+ if (mmddyyyy) return `${mmddyyyy[3]}-${mmddyyyy[1]}-${mmddyyyy[2]}`;
+ return s;
+}
+
+function autoFormatMMDDYYYYInput(value) {
+ const digits = String(value ?? "").replace(/\D/g, "").slice(0, 8);
+ if (digits.length < 2) return digits;
+ if (digits.length === 2) return `${digits}/`;
+ if (digits.length < 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+ if (digits.length === 4) return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/`;
+ return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function autoFormatLicenseNumberInput(value) {
+ const raw = String(value ?? "").toUpperCase();
+ const compact = raw.replace(/[^A-Z0-9]/g, "");
+ if (!compact) return "";
+
+ // Optional leading letter format: e.g. K19-10-004489
+ const hasPrefixLetter = /^[A-Z]/.test(compact);
+ if (hasPrefixLetter) {
+  const prefix = compact.charAt(0);
+  const digits = compact.slice(1).replace(/\D/g, "").slice(0, 10);
+  if (digits.length < 2) return `${prefix}${digits}`;
+  if (digits.length === 2) return `${prefix}${digits}-`;
+  if (digits.length < 4) return `${prefix}${digits.slice(0, 2)}-${digits.slice(2)}`;
+  if (digits.length === 4) return `${prefix}${digits.slice(0, 2)}-${digits.slice(2, 4)}-`;
+  return `${prefix}${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
+ }
+
+ // Pure numeric format: e.g. 19-10-004489
+ const digits = compact.replace(/\D/g, "").slice(0, 10);
+ if (digits.length < 2) return digits;
+ if (digits.length === 2) return `${digits}-`;
+ if (digits.length < 4) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+ if (digits.length === 4) return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-`;
+ return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
+}
+
 export const Application = () => {
  const nav = useNavigate();
  const [selected, setSelected] = useState("Employee Parking");
@@ -70,6 +156,7 @@ export const Application = () => {
  const [isEmailVerified, setIsEmailVerified] = useState(false);
  const [agreedToTerms, setAgreedToTerms] = useState(false);
  const [useAccountDetailsAsApplicant, setUseAccountDetailsAsApplicant] = useState(true);
+ const [applicantProfileData, setApplicantProfileData] = useState(null);
  const [documentFilesRef, setDocumentFilesRef] = useState({
   or: null,
   cr: null,
@@ -78,7 +165,7 @@ export const Application = () => {
  const [extractedDocDetails, setExtractedDocDetails] = useState({
   OR: { file_number: "", expiration_date: "" },
   CR: { file_number: "", date: "", owner_name: "", owner_address: "", plate_number: "", make: "", year_model: "", body_type: "", piston_displacement: "" },
-  DL: { expiration_date: "" },
+  DL: { expiration_date: "", name: "", license_number: "" },
  });
  const [confirmedDocDetails, setConfirmedDocDetails] = useState({
   or_file_number: "",
@@ -94,6 +181,8 @@ export const Application = () => {
   cr_year_model: "",
   cr_body_type: "",
   cr_piston_displacement: "",
+  dl_name: "",
+  dl_license_number: "",
  });
  const [detailsConfirmed, setDetailsConfirmed] = useState(false);
  const [isExtracting, setIsExtracting] = useState(false);
@@ -177,7 +266,10 @@ useEffect(() => {
     return (
      <Step1
       setProfileEmail={setProfileEmail}
-      setProfileData={setProfileData}
+      setProfileData={(data) => {
+       setProfileData(data);
+       setApplicantProfileData(data);
+      }}
       setProfileImage={setProfileImage}
       setHasApiError={setHasApiError}
       setAgreedToTerms={setAgreedToTerms}
@@ -290,8 +382,33 @@ useEffect(() => {
 
    const formData = new FormData();
 
-   // Add application type from choice selection
-   formData.append("role", selected);
+    // Add application type from choice selection
+    formData.append("role", selected);
+    formData.append(
+     "use_account_details_as_applicant",
+     useAccountDetailsAsApplicant ? "true" : "false"
+    );
+
+    // If applying for someone else, include the manually entered applicant details
+    if (!useAccountDetailsAsApplicant && applicantProfileData) {
+     const ownerFields = [
+      "first_name",
+      "last_name",
+      "email",
+      "contact_no",
+      "address",
+      "birth_date",
+      "sex",
+     ];
+
+     ownerFields.forEach((field) => {
+      const value = applicantProfileData?.[field];
+      if (value !== null && value !== undefined && String(value).trim() !== "") {
+       const backendField = field === "birth_date" ? "date_of_birth" : field;
+       formData.append(backendField, String(value).trim());
+      }
+     });
+    }
 
    // Add vehicle data
    Object.entries(vehicleData).forEach(([key, value]) => {
@@ -339,30 +456,10 @@ useEffect(() => {
 
   if (confirmedDocDetails.or_file_number && confirmedDocDetails.cr_file_number &&
       confirmedDocDetails.or_expiration && confirmedDocDetails.dl_expiration) {
-   // Backend expects OR expiration as MM/YYYY, but the month input value is typically YYYY-MM.
-   const normalizeMonthToMMYYYY = (value) => {
-    if (!value) return "";
-    const s = String(value).trim();
-    if (/^\d{2}\/\d{4}$/.test(s)) return s; // MM/YYYY
-    if (/^\d{4}-\d{2}$/.test(s)) {
-     const [yyyy, mm] = s.split("-");
-     return `${mm}/${yyyy}`;
-    }
-    if (/^\d{4}\/\d{2}$/.test(s)) {
-     const [yyyy, mm] = s.split("/");
-     return `${mm.padStart(2, "0")}/${yyyy}`;
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-     const [yyyy, mm] = s.split("-");
-     return `${mm}/${yyyy}`;
-    }
-    return s; // fallback; backend will validate
-   };
-
    formData.append("confirmed_or_file_number", confirmedDocDetails.or_file_number);
    formData.append("confirmed_cr_file_number", confirmedDocDetails.cr_file_number);
-   formData.append("confirmed_or_expiration", normalizeMonthToMMYYYY(confirmedDocDetails.or_expiration));
-   formData.append("confirmed_dl_expiration", confirmedDocDetails.dl_expiration);
+   formData.append("confirmed_or_expiration", normalizeToMMYYYY(confirmedDocDetails.or_expiration));
+   formData.append("confirmed_dl_expiration", normalizeDateToISO(confirmedDocDetails.dl_expiration));
   }
 
    // Add document files
@@ -426,12 +523,10 @@ useEffect(() => {
 
    toast.success("Application submitted successfully!");
 
-   // Navigate after a short delay
+   // Navigate back to dashboard after submit; review page is for History > View only.
    setTimeout(() => {
-    nav(`/applicant/application/review/${applicationId}`, {
-     state: { isFromApplication: true },
-    });
-   }, 2000);
+    nav("/applicant/dashboard");
+   }, 1200);
   } catch (error) {
    console.error("Error submitting application:", error);
    toast.error(
@@ -2083,6 +2178,7 @@ const Step4 = ({
  setExtractedDocDetails,
  setConfirmedDocDetails,
 }) => {
+ const nav = useNavigate();
  const [currentDocIndex, setCurrentDocIndex] = useState(0);
  const [showDocModal, setShowDocModal] = useState(false);
  const [modalFile, setModalFile] = useState(null);
@@ -2090,6 +2186,8 @@ const Step4 = ({
  const [modalForm, setModalForm] = useState({
   file_number: "",
   expiration_date: "",
+  name: "",
+  license_number: "",
   date: "",
   owner_name: "",
   owner_address: "",
@@ -2224,7 +2322,11 @@ const fileInputRef = useRef(null);
    setModalForm((prev) => ({
     ...prev,
     file_number: toStr(data.file_number),
-    expiration_date: docType === "OR" ? (toMonthInputValue(exp) || exp) : (toDateInputValue(exp) || exp),
+    expiration_date: toMMDDYYYYValue(exp) || exp,
+    name: docType === "DL" ? toStr(data.name) : prev.name,
+    license_number: docType === "DL"
+     ? autoFormatLicenseNumberInput(toStr(data.license_number))
+     : prev.license_number,
    }));
   }
  }, [showDocModal, pendingExtractedData]);
@@ -2240,7 +2342,18 @@ const fileInputRef = useRef(null);
  }, [showDocModal, modalDocType]);
 
  function buildPhAddressString(ph) {
-  const parts = [ph.street, ph.barangayName, ph.cityName, ph.provinceName, ph.regionName].filter(Boolean);
+  const cleanPart = (value) => {
+   const v = String(value ?? "").trim();
+   if (!v) return "";
+   return /^select\s+/i.test(v) ? "" : v;
+  };
+  const parts = [
+   cleanPart(ph.street),
+   cleanPart(ph.barangayName),
+   cleanPart(ph.cityName),
+   cleanPart(ph.provinceName),
+   cleanPart(ph.regionName),
+  ].filter(Boolean);
   return parts.join(", ");
  }
 
@@ -2299,7 +2412,7 @@ const fileInputRef = useRef(null);
   const next = {
    ...phAddress,
    cityCode: code,
-   cityName: name || "",
+   cityName: code ? (name || "") : "",
    barangays: [],
    barangayCode: "",
    barangayName: "",
@@ -2312,7 +2425,11 @@ const fileInputRef = useRef(null);
  }
 
  function handlePhBarangayChange(code, name) {
-  const next = { ...phAddress, barangayCode: code, barangayName: name || "" };
+  const next = {
+   ...phAddress,
+   barangayCode: code,
+   barangayName: code ? (name || "") : "",
+  };
   setPhAddress(next);
  }
 
@@ -2345,9 +2462,15 @@ const fileInputRef = useRef(null);
    });
    let data = await res.json();
    if (!res.ok) {
-    toast.error(data.detail || "Failed to extract document details.");
-    setHasApiError(true);
-    return;
+    if (res.status === 401) {
+     toast.error("Your session expired. Please log in again to continue uploading documents.");
+     localStorage.removeItem("token");
+     nav("/applicant-login");
+     return;
+    }
+     toast.error(data.detail || "Failed to extract document details.");
+     setHasApiError(true);
+     return;
    }
    if (data && typeof data === "object" && data.data != null && !("file_number" in data) && !("owner_name" in data)) {
     data = data.data;
@@ -2356,21 +2479,25 @@ const fileInputRef = useRef(null);
    const toStr = (v) => (v != null && v !== "" ? String(v).trim() : "");
   const payload = docType === "CR"
    ? {
-     _docType: docType,
-     file_number: data.file_number,
+      _docType: docType,
+      file_number: data.file_number,
      owner_name: data.owner_name,
      plate_number: data.plate_number,
      year_model: data.year_model,
      piston_displacement: data.piston_displacement,
     }
-   : {
-     _docType: docType,
-     file_number: data.file_number,
-     expiration_date: data.expiration_date,
-    };
+    : {
+      _docType: docType,
+      file_number: data.file_number,
+      expiration_date: data.expiration_date,
+      name: docType === "DL" ? data.name : undefined,
+      license_number: docType === "DL" ? data.license_number : undefined,
+     };
   const hasExtractedData = docType === "CR"
-   ? (toStr(payload.file_number) || toStr(payload.owner_name) || toStr(payload.plate_number) || toStr(payload.year_model) || toStr(payload.piston_displacement))
-   : (toStr(payload.file_number) || toStr(payload.expiration_date));
+    ? (toStr(payload.file_number) || toStr(payload.owner_name) || toStr(payload.plate_number) || toStr(payload.year_model) || toStr(payload.piston_displacement))
+    : docType === "DL"
+     ? (toStr(payload.expiration_date) || toStr(payload.name) || toStr(payload.license_number))
+     : (toStr(payload.file_number) || toStr(payload.expiration_date));
    if (!hasExtractedData) {
     toast.info("No data was extracted from the document. Please enter the details manually.");
    }
@@ -2400,13 +2527,17 @@ const fileInputRef = useRef(null);
       };
      }
      const exp = toStr(payload.expiration_date);
-     return {
-      ...prev,
-      file_number: toStr(payload.file_number),
-      expiration_date: docType === "OR" ? (toMonthInputValue(exp) || exp) : (toDateInputValue(exp) || exp),
-     };
-    });
-   }, 0);
+      return {
+       ...prev,
+       file_number: toStr(payload.file_number),
+       expiration_date: toMMDDYYYYValue(exp) || exp,
+       name: docType === "DL" ? toStr(payload.name) : prev.name,
+       license_number: docType === "DL"
+        ? autoFormatLicenseNumberInput(toStr(payload.license_number))
+        : prev.license_number,
+      };
+     });
+    }, 0);
   } catch (err) {
    console.error(err);
    toast.error("Failed to extract document details. Please try again.");
@@ -2421,23 +2552,35 @@ const fileInputRef = useRef(null);
   const doc = modalDocType;
   const lower = doc.toLowerCase();
   const pd = extractedPayloadRef.current || pendingExtractedData?.payload || pendingExtractedData;
+  const hasManualValue = (key) =>
+   Object.prototype.hasOwnProperty.call(modalForm, key);
   const effective = (key) => {
-   const m = modalForm[key];
-   // For plate_number, treat an explicitly cleared value ("") as the final value
-   if (key === "plate_number") {
-    if (m != null) return String(m).trim();
+    const m = modalForm[key];
+    // For plate_number, treat an explicitly cleared value ("") as the final value
+    if (key === "plate_number") {
+     if (m != null) return String(m).trim();
+     const p = pd && pd[key];
+     return p != null && p !== "" ? String(p).trim() : "";
+    }
+    if (key === "license_number") {
+     if (m != null) return autoFormatLicenseNumberInput(String(m));
+     const p = pd && pd[key];
+     return p != null && p !== "" ? autoFormatLicenseNumberInput(String(p)) : "";
+    }
+    if (m != null && String(m).trim() !== "") return String(m).trim();
     const p = pd && pd[key];
     return p != null && p !== "" ? String(p).trim() : "";
-   }
-   if (m != null && String(m).trim() !== "") return String(m).trim();
-   const p = pd && pd[key];
-   return p != null && p !== "" ? String(p).trim() : "";
-  };
+   };
 
-  setExtractedDocDetails((prev) => ({
-   ...prev,
-   [doc]: doc === "CR"
-    ? {
+   setExtractedDocDetails((prev) => {
+    const resolvedDlLicense = effective("license_number");
+    const dlLicenseForState = hasManualValue("license_number")
+     ? resolvedDlLicense
+     : (resolvedDlLicense || prev.DL?.license_number || "");
+    return ({
+    ...prev,
+    [doc]: doc === "CR"
+     ? {
       file_number: effective("file_number") || prev.CR?.file_number,
       date: effective("date") || prev.CR?.date,
       owner_name: effective("owner_name") || prev.CR?.owner_name,
@@ -2448,15 +2591,24 @@ const fileInputRef = useRef(null);
       body_type: effective("body_type") || prev.CR?.body_type,
       piston_displacement: effective("piston_displacement") || prev.CR?.piston_displacement,
      }
-    : {
-      file_number: doc !== "DL" ? (effective("file_number") || prev[doc]?.file_number) : prev[doc]?.file_number,
-      expiration_date: (effective("expiration_date") || prev[doc]?.expiration_date) ?? "",
-     },
-  }));
-  setConfirmedDocDetails((prev) => ({
-   ...prev,
-   ...(doc === "CR" && {
-    cr_file_number: effective("file_number") || prev.cr_file_number,
+     : {
+       file_number: doc !== "DL" ? (effective("file_number") || prev[doc]?.file_number) : prev[doc]?.file_number,
+        expiration_date: (effective("expiration_date") || prev[doc]?.expiration_date) ?? "",
+        name: doc === "DL" ? (effective("name") || prev.DL?.name || "") : prev[doc]?.name,
+        license_number: doc === "DL"
+         ? dlLicenseForState
+         : prev[doc]?.license_number,
+       },
+   })});
+   setConfirmedDocDetails((prev) => {
+    const resolvedDlLicense = effective("license_number");
+    const dlLicenseForState = hasManualValue("license_number")
+     ? resolvedDlLicense
+     : (resolvedDlLicense || prev.dl_license_number || "");
+    return ({
+    ...prev,
+    ...(doc === "CR" && {
+     cr_file_number: effective("file_number") || prev.cr_file_number,
     cr_date: effective("date") || prev.cr_date,
     cr_owner_name: effective("owner_name") || prev.cr_owner_name,
     cr_owner_address: effective("owner_address") || prev.cr_owner_address,
@@ -2473,8 +2625,12 @@ const fileInputRef = useRef(null);
     or_file_number: effective("file_number") || prev.or_file_number,
     or_expiration: effective("expiration_date") || prev.or_expiration,
    }),
-   ...(doc === "DL" && { dl_expiration: effective("expiration_date") || prev.dl_expiration }),
-  }));
+    ...(doc === "DL" && {
+     dl_expiration: effective("expiration_date") || prev.dl_expiration,
+     dl_name: effective("name") || prev.dl_name,
+      dl_license_number: dlLicenseForState,
+     }),
+    })});
   setDocumentFiles((prev) => ({ ...prev, [lower]: modalFile }));
   setShowDocFullscreen(false);
   setShowDocModal(false);
@@ -2483,7 +2639,7 @@ const fileInputRef = useRef(null);
   extractedPayloadRef.current = null;
   setPendingExtractedData(null);
   setModalForm({
-   file_number: "", expiration_date: "", date: "", owner_name: "", owner_address: "",
+   file_number: "", expiration_date: "", name: "", license_number: "", date: "", owner_name: "", owner_address: "",
    plate_number: "", plate_number_blank_or_temp: false,
    make: "", year_model: "", body_type: "", body_type_other: "", make_other: "", piston_displacement: "",
   });
@@ -2607,7 +2763,9 @@ const fileInputRef = useRef(null);
          const pd = extractedPayloadRef.current || pendingExtractedData?.payload || pendingExtractedData;
          const hasExtractedData = pd && (modalDocType === "CR"
           ? (pd.file_number || pd.owner_name || pd.plate_number || pd.year_model || pd.piston_displacement)
-          : (pd.file_number || pd.expiration_date));
+          : modalDocType === "DL"
+           ? (pd.expiration_date || pd.name || pd.license_number)
+           : (pd.file_number || pd.expiration_date));
         const f = (key) => {
          const v = modalForm[key];
          // If the user has typed anything (including an empty string), always prefer it.
@@ -2642,7 +2800,14 @@ const fileInputRef = useRef(null);
            <input
             type="text"
             value={modalForm.owner_name ?? ""}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, owner_name: e.target.value }))}
+            onChange={(e) =>
+             setModalForm((prev) => ({
+              ...prev,
+              owner_name: hasExtractedData
+               ? e.target.value
+               : String(e.target.value || "").toUpperCase(),
+             }))
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
             placeholder="Same as on the CR"
            />
@@ -2689,13 +2854,29 @@ const fileInputRef = useRef(null);
            />
           </div>
           <div>
-           <label className="block text-sm font-medium text-gray-700 mb-1">Date issued</label>
-           <input
-            type="date"
-            value={f("date")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, date: e.target.value }))}
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+             <span className="inline-flex items-center gap-1">
+              Date issued
+              <span
+               className="inline-flex items-center text-blue-600 cursor-help"
+               title="Use the date printed in the upper-right corner of the CR document."
+              >
+               <BiInfoCircle size={14} />
+              </span>
+             </span>
+            </label>
+             <input
+             type="text"
+             value={toMMDDYYYYValue(f("date"))}
+            onChange={(e) =>
+             setModalForm((prev) => ({
+              ...prev,
+              date: autoFormatMMDDYYYYInput(e.target.value),
+             }))
+            }
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
-           />
+            placeholder="MM/DD/YYYY"
+            />
           </div>
           <div>
            <label className="block text-sm font-medium text-gray-700 mb-1">Year model</label>
@@ -2708,31 +2889,24 @@ const fileInputRef = useRef(null);
            />
           </div>
           <div>
-           <label className="block text-sm font-medium text-gray-700 mb-1">Body type</label>
-           <select
-            value={f("body_type")}
-            onChange={(e) => setModalForm((prev) => ({ ...prev, body_type: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
-           >
-            <option value="">Select body type</option>
-            {(() => {
-             const bodyTypes = ["Sedan", "SUV", "Hatchback", "Wagon", "Van", "Pickup", "Truck", "Motorcycle", "Tricycle", "Jeepney", "Other"];
-             const current = f("body_type");
-             const hasOther = current && !bodyTypes.includes(current);
-             return (
-              <>
-               {bodyTypes.map((bt) => (
-                <option key={bt} value={bt}>{bt}</option>
-               ))}
-               {hasOther && <option value={current}>{current} (from document)</option>}
-              </>
-             );
-            })()}
-           </select>
-          </div>
-          {f("body_type") === "Other" && (
-          <div>
-           <label className="block text-sm font-medium text-gray-700 mb-1">Specify body type (optional)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Body type</label>
+            <input
+             type="text"
+             list="cr-body-type-suggestions"
+             value={f("body_type")}
+             onChange={(e) => setModalForm((prev) => ({ ...prev, body_type: e.target.value }))}
+             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+             placeholder="Type or select body type"
+            />
+            <datalist id="cr-body-type-suggestions">
+             {["Sedan", "SUV", "Hatchback", "Wagon", "Van", "Pickup", "Truck", "Motorcycle", "Tricycle", "Jeepney", "Other"].map((bt) => (
+              <option key={bt} value={bt} />
+             ))}
+            </datalist>
+           </div>
+           {f("body_type") === "Other" && (
+           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Specify body type (optional)</label>
            <input
             type="text"
             value={modalForm.body_type_other ?? ""}
@@ -2743,13 +2917,7 @@ const fileInputRef = useRef(null);
           </div>
           )}
          <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
-          <select
-           value={f("make")}
-           onChange={(e) => setModalForm((prev) => ({ ...prev, make: e.target.value }))}
-           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
-          >
-           <option value="">Select make/brand</option>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
            {(() => {
             const bodyType = f("body_type");
             const carMakes = [
@@ -2762,19 +2930,25 @@ const fileInputRef = useRef(null);
              "Bristol", "Ducati", "CFMoto", "Kymco", "SYM", "Keeway", "NWOW", "Triumph", "Other"
             ];
             const makes = bodyType === "Motorcycle" ? motoMakes : carMakes;
-            const current = f("make");
-            const hasOther = current && !makes.includes(current);
             return (
              <>
-              {makes.map((m) => (
-               <option key={m} value={m}>{m}</option>
-              ))}
-              {hasOther && <option value={current}>{current} (from document)</option>}
+              <input
+               type="text"
+               list="cr-make-suggestions"
+               value={f("make")}
+               onChange={(e) => setModalForm((prev) => ({ ...prev, make: e.target.value }))}
+               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
+               placeholder="Type or select make/brand"
+              />
+              <datalist id="cr-make-suggestions">
+               {makes.map((m) => (
+                <option key={m} value={m} />
+               ))}
+              </datalist>
              </>
             );
            })()}
-          </select>
-         </div>
+          </div>
          {f("make") === "Other" && (
          <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Specify make (optional)</label>
@@ -2799,14 +2973,61 @@ const fileInputRef = useRef(null);
           </div>
          </div>
         )}
+        {modalDocType === "DL" && (
+         <>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">Name</label>
+           <input
+            type="text"
+            value={f("name")}
+            onChange={(e) => setModalForm((prev) => ({ ...prev, name: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="Name as shown on the license"
+           />
+          </div>
+          <div>
+           <label className="block text-sm text-gray-600 mb-1">License number</label>
+           <input
+            type="text"
+            value={f("license_number")}
+            onChange={(e) =>
+             setModalForm((prev) => ({
+              ...prev,
+              license_number: autoFormatLicenseNumberInput(e.target.value),
+             }))
+            }
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="e.g. K19-10-004489"
+           />
+          </div>
+         </>
+        )}
         {(modalDocType === "OR" || modalDocType === "DL") && (
          <div>
-          <label className="block text-sm text-gray-600 mb-1">Expiration date</label>
+          <label className="block text-sm text-gray-600 mb-1">
+           <span className="inline-flex items-center gap-1">
+            Expiration date
+            {modalDocType === "OR" && (
+             <span
+              className="inline-flex items-center text-blue-600 cursor-help"
+              title="Use the last date of expiration date shown on the OR."
+             >
+              <BiInfoCircle size={14} />
+             </span>
+            )}
+           </span>
+          </label>
           <input
-           type={modalDocType === "OR" ? "month" : "date"}
-           value={f("expiration_date")}
-           onChange={(e) => setModalForm((prev) => ({ ...prev, expiration_date: e.target.value }))}
+           type="text"
+           value={toMMDDYYYYValue(f("expiration_date"))}
+           onChange={(e) =>
+            setModalForm((prev) => ({
+             ...prev,
+             expiration_date: autoFormatMMDDYYYYInput(e.target.value),
+            }))
+           }
            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+           placeholder="MM/DD/YYYY"
           />
          </div>
         )}
@@ -3023,12 +3244,14 @@ const Step5ConfirmDetails = ({
  detailsConfirmed,
  setDetailsConfirmed,
 }) => {
- const fromOcr = (key) => {
+  const fromOcr = (key) => {
   const v = key === "or_file_number" ? extractedDocDetails?.OR?.file_number
     : key === "cr_file_number" ? extractedDocDetails?.CR?.file_number
     : key === "cr_owner_name" ? extractedDocDetails?.CR?.owner_name
     : key === "or_expiration" ? extractedDocDetails?.OR?.expiration_date
     : key === "dl_expiration" ? extractedDocDetails?.DL?.expiration_date
+    : key === "dl_name" ? extractedDocDetails?.DL?.name
+    : key === "dl_license_number" ? extractedDocDetails?.DL?.license_number
     : "";
   return v != null && String(v).trim() !== "";
  };
@@ -3073,18 +3296,20 @@ const Step5ConfirmDetails = ({
        <label className="block text-sm font-medium text-gray-700 mb-1">
         CR owner&apos;s name
        </label>
-       <input
-        type="text"
-        value={confirmedDocDetails.cr_owner_name ?? ""}
-        onChange={(e) =>
-         setConfirmedDocDetails((prev) => ({
-          ...prev,
-          cr_owner_name: e.target.value,
-         }))
-        }
-        className="w-full px-3 py-2 border border-gray-300 rounded-md"
-        placeholder={fromOcr("cr_owner_name") ? "" : "Not extracted – please enter owner's full name"}
-       />
+        <input
+         type="text"
+         value={confirmedDocDetails.cr_owner_name ?? ""}
+         onChange={(e) =>
+          setConfirmedDocDetails((prev) => ({
+           ...prev,
+           cr_owner_name: fromOcr("cr_owner_name")
+            ? e.target.value
+            : String(e.target.value || "").toUpperCase(),
+          }))
+         }
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         placeholder={fromOcr("cr_owner_name") ? "" : "Not extracted – please enter owner's full name"}
+        />
        {fromOcr("cr_owner_name") && (
          <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>
        )}
@@ -3116,18 +3341,27 @@ const Step5ConfirmDetails = ({
       </div>
       <div>
        <label className="block text-sm font-medium text-gray-700 mb-1">
-        OR expiration (MM/YYYY)
+        <span className="inline-flex items-center gap-1">
+         OR expiration (MM/DD/YYYY)
+         <span
+          className="inline-flex items-center text-blue-600 cursor-help"
+          title="Use the last date of expiration date shown on the OR."
+         >
+          <BiInfoCircle size={14} />
+         </span>
+        </span>
        </label>
        <input
-        type="month"
+        type="text"
         value={confirmedDocDetails.or_expiration ?? ""}
         onChange={(e) =>
          setConfirmedDocDetails((prev) => ({
           ...prev,
-          or_expiration: e.target.value,
+          or_expiration: autoFormatMMDDYYYYInput(e.target.value),
          }))
         }
         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        placeholder="MM/DD/YYYY"
        />
        {fromOcr("or_expiration") && (
          <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>
@@ -3140,18 +3374,59 @@ const Step5ConfirmDetails = ({
       <h2 className="text-sm font-semibold text-gray-800">Driver&apos;s License (DL)</h2>
       <div>
        <label className="block text-sm font-medium text-gray-700 mb-1">
-        DL expiration (YYYY/MM/DD)
+        Name
        </label>
        <input
-        type="date"
+        type="text"
+        value={confirmedDocDetails.dl_name ?? ""}
+        onChange={(e) =>
+         setConfirmedDocDetails((prev) => ({
+          ...prev,
+          dl_name: e.target.value,
+         }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        placeholder="Name as shown on the license"
+       />
+       {fromOcr("dl_name") && (
+        <p className="text-xs text-blue-600 mt-0.5">Filled from your document - edit if wrong.</p>
+       )}
+      </div>
+      <div>
+       <label className="block text-sm font-medium text-gray-700 mb-1">
+        License number
+       </label>
+       <input
+        type="text"
+        value={confirmedDocDetails.dl_license_number ?? ""}
+        onChange={(e) =>
+         setConfirmedDocDetails((prev) => ({
+          ...prev,
+          dl_license_number: autoFormatLicenseNumberInput(e.target.value),
+         }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        placeholder="e.g. K19-10-004489"
+       />
+       {fromOcr("dl_license_number") && (
+        <p className="text-xs text-blue-600 mt-0.5">Filled from your document - edit if wrong.</p>
+       )}
+      </div>
+      <div>
+       <label className="block text-sm font-medium text-gray-700 mb-1">
+         DL expiration (MM/DD/YYYY)
+       </label>
+        <input
+        type="text"
         value={confirmedDocDetails.dl_expiration ?? ""}
         onChange={(e) =>
          setConfirmedDocDetails((prev) => ({
           ...prev,
-          dl_expiration: e.target.value,
+          dl_expiration: autoFormatMMDDYYYYInput(e.target.value),
          }))
         }
         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        placeholder="MM/DD/YYYY"
        />
        {fromOcr("dl_expiration") && (
          <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>

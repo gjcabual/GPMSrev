@@ -13,9 +13,16 @@ export const ApproveModal = ({
  const [success, setSuccess] = useState(false);
  const [status, setStatus] = useState(initialStatus);
  const [message, setMessage] = useState("");
+ const [isSubmitting, setIsSubmitting] = useState(false);
 
  // Support both nested (data.applicant.application_id) and flat (data.application_id) shapes
  const applicationId = data?.application_id ?? data?.applicant?.application_id;
+ const hasUploadedReceipt = Boolean(
+  data?.has_uploaded_receipt ||
+   (data?.slip?.image &&
+    String(data?.slip?.official_receipt || "").trim() &&
+    Number(data?.slip?.amount) > 0)
+ );
 
  useEffect(() => {
   document.body.style.overflow = "hidden";
@@ -31,10 +38,15 @@ export const ApproveModal = ({
    toast.error("Application ID is missing. Please select an application again.");
    return;
   }
+  if (status === "Approved" && !hasUploadedReceipt) {
+   toast.error("Cannot approve yet. Applicant must upload receipt image, OR number, and amount.");
+   return;
+  }
   const formData = new FormData();
   formData.append("status", status);
   formData.append("application_id", String(applicationId));
   try {
+   setIsSubmitting(true);
    const res = await fetch(buildUrl("/staff/application-status/update"), {
     method: "POST",
     headers: {
@@ -68,6 +80,8 @@ export const ApproveModal = ({
   } catch (err) {
    console.error("Approve error:", err);
    toast.error("Request failed. Please try again.");
+  } finally {
+   setIsSubmitting(false);
   }
  };
 
@@ -118,23 +132,52 @@ export const ApproveModal = ({
           {data?.applicant?.vehicle?.plate_no ?? data?.plate_number ?? "—"}
          </span>
         </div>
+        <div className="flex items-center gap-2">
+         <span className="w-24 text-gray-600 font-medium">Receipt:</span>
+         <span className="flex items-center h-10 px-4 rounded-md bg-slate-100 text-md w-full font-medium text-gray-500">
+          {hasUploadedReceipt ? "Uploaded" : "Not uploaded"}
+         </span>
+        </div>
+        <div className="flex items-center gap-2">
+         <span className="w-24 text-gray-600 font-medium">OR #:</span>
+         <span className="flex items-center h-10 px-4 rounded-md bg-slate-100 text-md w-full font-medium text-gray-500">
+          {data?.slip?.official_receipt || "N/A"}
+         </span>
+        </div>
+        <div className="flex items-center gap-2">
+         <span className="w-24 text-gray-600 font-medium">Amount:</span>
+         <span className="flex items-center h-10 px-4 rounded-md bg-slate-100 text-md w-full font-medium text-gray-500">
+          {data?.slip?.amount != null ? data.slip.amount : "N/A"}
+         </span>
+        </div>
        </div>
       </div>
       <div className="flex items-center justify-end gap-2 mt-10">
-       <button
-        onClick={close}
-        className="h-10 px-4 rounded-md text-gray-600 cursor-pointer"
-       >
-        Cancel
-       </button>
-       <button
-        onClick={handleApprove}
-        className={`h-10 px-4 rounded-md text-white cursor-pointer ${
-         status === "Approved" ? "bg-green-500" : "bg-red-500"
-        }`}
-       >
-        {status === "Approved" ? "Approve" : "Reject"}
-       </button>
+        <button
+         onClick={close}
+         className="h-10 px-4 rounded-md text-gray-600 cursor-pointer transition-colors hover:bg-gray-100"
+        >
+         Cancel
+        </button>
+        <button
+         onClick={handleApprove}
+         disabled={isSubmitting}
+         className={`h-10 px-4 rounded-md text-white transition-all ${
+          isSubmitting
+           ? "opacity-70 cursor-not-allowed"
+           : "cursor-pointer hover:shadow-md hover:-translate-y-0.5"
+         } ${
+          status === "Approved"
+           ? "bg-green-500 hover:bg-green-600"
+           : "bg-red-500 hover:bg-red-600"
+         }`}
+        >
+         {isSubmitting
+          ? "Processing..."
+          : status === "Approved"
+          ? "Approve"
+          : "Reject"}
+        </button>
       </div>
      </div>
     )}

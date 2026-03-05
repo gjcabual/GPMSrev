@@ -30,6 +30,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+ROLE_PRICE_DEFAULTS = {
+    "Student": 50.0,
+    "Employee Parking": 50.0,
+    "Drop Off": 50.0,
+    "Concessionaire": 100.0,
+}
+
+ROLE_ALIASES = {
+    "STUDENT": "Student",
+    "EMPLOYEE": "Employee Parking",
+    "EMPLOYEE PARKING": "Employee Parking",
+    "EMPLOYEE_PARKING": "Employee Parking",
+    "DROP OFF": "Drop Off",
+    "DROP-OFF": "Drop Off",
+    "DROPOFF": "Drop Off",
+    "DROP_OFF": "Drop Off",
+    "CONCESSIONAIRE": "Concessionaire",
+}
+
 
 class ApplicantController:
     def __init__(self, db: AsyncSession):
@@ -193,10 +212,15 @@ class ApplicantController:
     async def get_sticker_price_by_role(self, role: str) -> float:
         """Get the current sticker price for the given role type"""
         try:
+            normalized_role = ROLE_ALIASES.get(
+                str(role or "").strip().upper(),
+                str(role or "").strip(),
+            )
+
             # Query the latest batch session for the role type
             query = (
                 select(BatchStickerSessions)
-                .where(BatchStickerSessions.type == role)
+                .where(BatchStickerSessions.type == normalized_role)
                 .order_by(BatchStickerSessions.created_at.desc())
                 .limit(1)
             )
@@ -206,27 +230,17 @@ class ApplicantController:
             
             if batch:
                 return float(batch.price)
-            
-            # If no batch found for this specific role, try to get a default price
-            default_query = (
-                select(BatchStickerSessions)
-                .order_by(BatchStickerSessions.created_at.desc())
-                .limit(1)
-            )
-            
-            default_result = await self.db.execute(default_query)
-            default_batch = default_result.scalar_one_or_none()
-            
-            if default_batch:
-                return float(default_batch.price)
-                
-            # Default price if no batch found
-            return 500.00
+
+            # Role-specific default price if no batch exists yet for this role.
+            return float(ROLE_PRICE_DEFAULTS.get(normalized_role, 50.0))
 
         except Exception as e:
             logger.warning("Error getting sticker price: %s", e)
-            # Return a reasonable default if there's an error
-            return 500.00
+            normalized_role = ROLE_ALIASES.get(
+                str(role or "").strip().upper(),
+                str(role or "").strip(),
+            )
+            return float(ROLE_PRICE_DEFAULTS.get(normalized_role, 50.0))
 
     async def send_initial_payment_slip(self, application_id: int, user_id: UUID) -> dict:
         """
@@ -377,8 +391,17 @@ class ApplicantController:
             # Run cleanup first to remove stale applications
             await cleanup_stale_applications(self.db)
             
-            # Return applications that are Pending / Waiting for approval and not yet submitted (no slip):
-            # created but awaiting payment / upload receipt.
+            # Return applications whose *latest* status is Pending / Waiting for approval.
+            # Keep Waiting-for-approval visible even after receipt upload (slip_id present).
+            latest_status_subquery = (
+                select(
+                    ApplicationStatus.application_id.label("application_id"),
+                    func.max(ApplicationStatus.status_id).label("latest_status_id"),
+                )
+                .group_by(ApplicationStatus.application_id)
+                .subquery()
+            )
+
             query = (
                 select(
                     Application,
@@ -386,16 +409,24 @@ class ApplicantController:
                     ApplicationStatus.status
                 )
                 .join(Vehicle, Application.plate_no == Vehicle.plate_no)
-                .join(ApplicationStatus, Application.application_id == ApplicationStatus.application_id)
+                .outerjoin(
+                    latest_status_subquery,
+                    Application.application_id == latest_status_subquery.c.application_id
+                )
+                .outerjoin(
+                    ApplicationStatus,
+                    ApplicationStatus.status_id == latest_status_subquery.c.latest_status_id
+                )
                 .where(
                     and_(
                         Application.user_id == user_id,
-                        ApplicationStatus.status.in_(["Pending", "Waiting for approval"]),
-                        Application.slip_id == None
+                        or_(
+                            ApplicationStatus.status.is_(None),
+                            ApplicationStatus.status.in_(["Pending", "Waiting for approval"])
+                        )
                     )
                 )
-                # Order by latest status_id first so we can pick the most recent per application
-                .order_by(Application.application_id, ApplicationStatus.status_id.desc())
+                .order_by(Application.application_id.desc())
             )
 
             # Add vehicle type filter if provided
@@ -403,16 +434,7 @@ class ApplicantController:
                 query = query.where(Vehicle.vehicle_type == vehicle_type)
 
             result = await self.db.execute(query)
-            rows = result.fetchall()
-
-            # Deduplicate by application_id (one app can have multiple status rows)
-            seen_ids = set()
-            applications = []
-            for app, vehicle, status_value in rows:
-                if app.application_id in seen_ids:
-                    continue
-                seen_ids.add(app.application_id)
-                applications.append((app, vehicle, status_value))
+            applications = result.fetchall()
 
             return [
                 {
@@ -423,6 +445,7 @@ class ApplicantController:
                     "application_role": app.role,
                     "vehicle_type": vehicle.vehicle_type,
                     "status": status_value or "Pending",
+                    "has_uploaded_receipt": bool(app.slip_id),
                     "front_image": f"/applicant/vehicle/{vehicle.plate_no}/image/front" if vehicle.front_image else None,
                     "back_image": f"/applicant/vehicle/{vehicle.plate_no}/image/back" if vehicle.back_image else None
                 }
@@ -900,11 +923,26 @@ class ApplicantController:
             status_query = (
                 select(ApplicationStatus)
                 .where(ApplicationStatus.application_id == application_id)
-                .order_by(ApplicationStatus.date.desc())
+                .order_by(ApplicationStatus.date.desc(), ApplicationStatus.status_id.desc())
                 .limit(1)
             )
             status_result = await self.db.execute(status_query)
             status = status_result.scalar_one_or_none()
+
+            # Get uploaded receipt/slip details (if any)
+            slip_payload = None
+            if app.slip_id:
+                slip_query = select(Slip).where(Slip.slip_id == app.slip_id)
+                slip_result = await self.db.execute(slip_query)
+                slip = slip_result.scalar_one_or_none()
+                if slip:
+                    slip_payload = {
+                        "slip_id": slip.slip_id,
+                        "image": f"/api/v1/applicant/slip/{slip.slip_id}/image" if slip.image else None,
+                        "official_receipt": slip.official_receipt,
+                        "amount": float(slip.total_amount) if slip.total_amount is not None else None,
+                        "date": slip.date.isoformat() if slip.date else None,
+                    }
             
             # Get profile data
             profile_query = (
@@ -990,6 +1028,7 @@ class ApplicantController:
                 "date": app.date,
                 "building_name": app.building_name,
                 "status": status.status if status else "Pending",
+                "slip": slip_payload,
                 "applicant": {
                     "first_name": profile.first_name,
                     "last_name": profile.last_name,
@@ -1495,43 +1534,70 @@ class ApplicantController:
         user_id: UUID
     ) -> dict:
         try:
-            # Check if any applications already have a status
-            status_query = select(ApplicationStatus).where(
-                ApplicationStatus.application_id.in_(application_ids)
-            )
-            status_result = await self.db.execute(status_query)
-            existing_statuses = status_result.scalars().all()
+            if not application_ids:
+                raise HTTPException(status_code=400, detail="No application IDs were provided")
 
-            if existing_statuses:
-                # Get application IDs that already have status
-                apps_with_status = [status.application_id for status in existing_statuses]
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Applications with ID {apps_with_status} already been submitted"
-                )
+            normalized_ids = sorted(set(application_ids))
 
-            # Get applications and validate
+            # Get applications and validate ownership
             apps_query = select(Application).where(
                 and_(
-                    Application.application_id.in_(application_ids),
+                    Application.application_id.in_(normalized_ids),
                     Application.user_id == user_id
                 )
             )
             apps_result = await self.db.execute(apps_query)
             applications = apps_result.scalars().all()
 
-            if not applications:
+            if len(applications) != len(normalized_ids):
                 raise HTTPException(
                     status_code=404,
-                    detail="No applications found"
+                    detail="Some applications were not found or do not belong to your account"
                 )
 
-            # Group applications by role
-            role_groups = {}
+            # Validate latest status per application:
+            # receipt upload is allowed only for Pending / Waiting for approval
+            latest_status_subquery = (
+                select(
+                    ApplicationStatus.application_id,
+                    func.max(ApplicationStatus.status_id).label("latest_status_id")
+                )
+                .where(ApplicationStatus.application_id.in_(normalized_ids))
+                .group_by(ApplicationStatus.application_id)
+                .subquery()
+            )
+            latest_status_query = (
+                select(ApplicationStatus.application_id, ApplicationStatus.status)
+                .join(
+                    latest_status_subquery,
+                    and_(
+                        ApplicationStatus.application_id == latest_status_subquery.c.application_id,
+                        ApplicationStatus.status_id == latest_status_subquery.c.latest_status_id
+                    )
+                )
+            )
+            latest_status_result = await self.db.execute(latest_status_query)
+            latest_status_map = {row.application_id: row.status for row in latest_status_result.all()}
+
+            invalid_status_apps = []
+            already_uploaded_apps = []
             for app in applications:
-                if app.role not in role_groups:
-                    role_groups[app.role] = []
-                role_groups[app.role].append(app)
+                latest_status = latest_status_map.get(app.application_id)
+                if latest_status not in ("Pending", "Waiting for approval"):
+                    invalid_status_apps.append(app.application_id)
+                if app.slip_id is not None:
+                    already_uploaded_apps.append(app.application_id)
+
+            if invalid_status_apps:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Only Pending or Waiting for approval applications can upload a receipt: {invalid_status_apps}"
+                )
+            if already_uploaded_apps:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Receipt already uploaded for application(s): {already_uploaded_apps}"
+                )
 
             # Create slip record first with user-provided receipt number
             current_date = datetime.now().date()  
@@ -1548,104 +1614,31 @@ class ApplicantController:
             await self.db.flush()
 
             submitted_apps = []
-            total_amount = 0
+            computed_amount = 0.0
+            role_names = sorted({app.role for app in applications})
 
-            for role, apps in role_groups.items():
-                # Get matching batch session - get the most recent one
-                batch_query = (
-                    select(BatchStickerSessions)
-                    .where(BatchStickerSessions.type == role)
-                    .order_by(BatchStickerSessions.created_at.desc())  # Get the most recent batch
-                    .limit(1)  # Limit to one result
-                )
-                batch_result = await self.db.execute(batch_query)
-                batch = batch_result.scalar_one_or_none()
+            # Fallback computation when cashier amount is not sent.
+            for role in role_names:
+                role_count = sum(1 for app in applications if app.role == role)
+                role_price = await self.get_sticker_price_by_role(role)
+                computed_amount += float(role_price) * role_count
 
-                if not batch:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"No batch session found for {role}"
-                    )
+            for app in applications:
+                app.slip_id = slip.slip_id
+                submitted_apps.append({
+                    "application_id": app.application_id,
+                    "status": latest_status_map.get(app.application_id) or "Pending",
+                    "date": current_date.isoformat(),
+                    "sticker_number": None,
+                    "role": app.role,
+                    "amount": float(paid_amount) if paid_amount is not None and paid_amount > 0 else None
+                })
 
-                # Get next available sticker number
-                next_number_query = select(func.max(Sticker.sticker_id)).where(
-                    Sticker.batch_id == batch.batch_id
-                )
-                result = await self.db.execute(next_number_query)
-                last_number = result.scalar_one_or_none()
-
-                if last_number:
-                    # Extract number from last sticker (e.g., "24-1001" -> 1001)
-                    next_num = int(last_number.split('-')[1]) + 1
-                else:
-                    next_num = batch.start_at
-
-                # Process applications for this role
-                for app in apps:
-                    if next_num > batch.end_at:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"No more sticker numbers available for {role}"
-                        )
-
-                    # Generate sticker number (YY-####)
-                    year = str(current_date.year)[2:]
-                    sticker_number = f"{year}-{next_num:04d}"
-
-                    # Create sticker
-                    sticker = Sticker(
-                        sticker_id=sticker_number,
-                        batch_id=batch.batch_id,
-                        plate_no=app.plate_no
-                    )
-                    self.db.add(sticker)
-                    await self.db.flush()
-
-                    # Update application
-                    app.sticker_id = sticker.id
-                    app.slip_id = slip.slip_id
-
-                    # Create pending status
-                    status = ApplicationStatus(
-                        status="Pending",
-                        date=current_date,
-                        application_id=app.application_id
-                    )
-                    self.db.add(status)
-
-                    total_amount += batch.price
-                    submitted_apps.append({
-                        "application_id": app.application_id,
-                        "status": "Pending",
-                        "date": current_date.isoformat(),
-                        "sticker_number": sticker_number,
-                        "role": role,
-                        "amount": batch.price
-                    })
-
-                    next_num += 1
-
-            # Update slip total amount: use cashier amount when provided, else computed amount.
-            if paid_amount is not None and paid_amount > 0:
-                slip.total_amount = float(paid_amount)
-            else:
-                slip.total_amount = float(total_amount)
-            slip.nature_of_payment = f"Parking Sticker Application ({', '.join(role_groups.keys())})"
+            # Use cashier amount when provided; otherwise use computed amount by role.
+            slip.total_amount = float(paid_amount) if paid_amount is not None and paid_amount > 0 else float(computed_amount)
+            slip.nature_of_payment = f"Parking Sticker Application ({', '.join(role_names)})"
             
             await self.db.commit()
-
-            # Send gatepass slip email to applicant with actual amount and slip details
-            slip_sent = await send_payment_slip_email(
-                db=self.db,
-                user_id=user_id,
-                nature_of_payment=slip.nature_of_payment,
-                total_amount=total_amount,
-            )
-            if not slip_sent:
-                logger.warning(
-                    "Gatepass slip email not sent after submit user_id=%s slip_id=%s. Check EMAIL_* env.",
-                    user_id, slip.slip_id,
-                )
 
             return {
                 "message": f"Successfully submitted {len(submitted_apps)} applications",

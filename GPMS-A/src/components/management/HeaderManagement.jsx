@@ -4,6 +4,7 @@ import { ApproveModal } from "../applicant/ApproveModal";
 import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { IoClose } from "react-icons/io5";
 import React from "react";
+import { toast } from "sonner";
 
 // Image display component that fetches image from backend
 const ImageDisplay = React.memo(
@@ -120,7 +121,20 @@ export const HeaderManagement = ({
  const [currentIndex, setCurrentIndex] = useState(0);
  const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
 
+ const hasUploadedReceipt = Boolean(
+   selectData?.has_uploaded_receipt ||
+    selectData?.slip?.image ||
+    (String(selectData?.slip?.official_receipt || "").trim() &&
+     Number(selectData?.slip?.amount) > 0)
+  );
+ const approveDisabledReason =
+  "Applicant must upload receipt image and provide valid OR number and amount before approval.";
+
  const handleApprove = async (status) => {
+  if (status === "Approved" && !hasUploadedReceipt) {
+   toast.info(approveDisabledReason);
+   return;
+  }
   setStatus(status);
   setApproveModal(true);
  };
@@ -400,8 +414,36 @@ export const HeaderManagement = ({
           ? selectData.applicant.vehicle.sticker.sticker_id
           : "##-####"}
         </span>
+        </div>
+        <div className="mt-2 p-3 rounded-md border border-gray-200 bg-white">
+         <div className="flex items-center justify-between">
+          <span className="text-gray-700 font-medium">Payment Receipt</span>
+          <span
+           className={`text-xs font-semibold px-2 py-1 rounded-full ${
+            hasUploadedReceipt
+             ? "bg-emerald-100 text-emerald-700"
+             : "bg-amber-100 text-amber-700"
+           }`}
+          >
+           {hasUploadedReceipt ? "Uploaded" : "Not Uploaded"}
+          </span>
+         </div>
+         <div className="mt-2 text-sm text-gray-600 space-y-1">
+          <p>
+           OR Number:{" "}
+           <span className="font-medium text-gray-800">
+            {selectData?.slip?.official_receipt || "N/A"}
+           </span>
+          </p>
+          <p>
+           Amount:{" "}
+           <span className="font-medium text-gray-800">
+            {selectData?.slip?.amount != null ? selectData.slip.amount : "N/A"}
+           </span>
+          </p>
+         </div>
+        </div>
        </div>
-      </div>
 
       {/* Middle Right - Documents */}
       <div className="flex flex-col gap-2">
@@ -419,22 +461,28 @@ export const HeaderManagement = ({
      </div>
 
      {/* Conditionally Render Action Buttons only if there are applications */}
-     {showButtons && hasApplications && (
-      <div className="flex items-center gap-5">
-       <button
-        onClick={() => handleApprove("Approved")}
-        className="h-10 px-4 rounded-md text-white font-medium bg-green-500 cursor-pointer"
-       >
-        Approve
-       </button>
-       <button
-        onClick={() => handleApprove("Rejected")}
-        className="h-10 px-4 rounded-md text-white font-medium bg-red-500"
-       >
-        Reject
-       </button>
-      </div>
-     )}
+      {showButtons && hasApplications && (
+       <div className="flex items-center gap-5">
+        <button
+         onClick={() => handleApprove("Approved")}
+         disabled={!hasUploadedReceipt}
+         title={!hasUploadedReceipt ? approveDisabledReason : "Approve application"}
+         className={`h-10 px-4 rounded-md text-white font-medium transition-all duration-200 ${
+          hasUploadedReceipt
+           ? "bg-green-500 cursor-pointer hover:bg-green-600 hover:shadow-md hover:-translate-y-0.5"
+           : "bg-green-300 cursor-not-allowed opacity-80"
+         }`}
+        >
+         Approve
+        </button>
+        <button
+         onClick={() => handleApprove("Rejected")}
+         className="h-10 px-4 rounded-md text-white font-medium bg-red-500 transition-all duration-200 hover:bg-red-600 hover:shadow-md hover:-translate-y-0.5"
+        >
+         Reject
+        </button>
+       </div>
+      )}
      {approveModal && (
       <ApproveModal
        data={selectData}

@@ -213,7 +213,11 @@ export const ApplicationReview = ({
        <div className="mt-4 sm:mt-6 md:mt-10 space-y-8 sm:space-y-12 md:space-y-20">
         <PersonalInfo data={data?.applicant} />
         <VehicleInfo data={data?.applicant?.vehicle_information} />
-        <ValidCredentials data={data?.applicant?.documents} />
+        <ValidCredentials
+         data={data?.applicant?.documents}
+         slip={data?.slip}
+         status={data?.status}
+        />
         <Application data={data} />
         <AuthorizedDriver data={data?.applicant?.driver} />
        </div>
@@ -224,20 +228,30 @@ export const ApplicationReview = ({
          </div>
 
          {!isFromLog ? (
-          <>
-
-           <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-4 mt-4 sm:mt-5">
-            <button
-             onClick={() => nav("/applicant/dashboard")}
-             className="bg-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium hover:bg-primary/90 text-white"
-            >
-             Continue
-            </button>
-           </div>
-
-          
-         </>
-        ) : null}
+          <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-4 mt-4 sm:mt-5">
+           <button
+            onClick={() => nav(-1)}
+            className="border border-primary text-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium hover:bg-primary/5"
+           >
+            Back
+           </button>
+           <button
+            onClick={() => nav("/applicant/dashboard")}
+            className="bg-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium hover:bg-primary/90 text-white"
+           >
+            Continue
+           </button>
+          </div>
+         ) : (
+          <div className="flex justify-center mt-4 sm:mt-5">
+           <button
+            onClick={() => nav(-1)}
+            className="border border-primary text-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium hover:bg-primary/5"
+           >
+            Back
+           </button>
+          </div>
+         )}
        </div>
       </div>
      </div>
@@ -472,8 +486,11 @@ const VehicleInfo = ({ data }) => {
  );
 };
 
-const ValidCredentials = ({ data }) => {
- if (!data || !data.length) {
+const ValidCredentials = ({ data, slip, status }) => {
+ const hasDocuments = Array.isArray(data) && data.length > 0;
+ const showUploadedReceipt = Boolean(slip?.image);
+
+ if (!hasDocuments && !showUploadedReceipt) {
   return (
    <>
     <div>
@@ -484,12 +501,12 @@ const ValidCredentials = ({ data }) => {
       <hr />
      </div>
      <div className="mt-4 md:mt-10 flex justify-center">
-      <p className="text-gray-500">No credentials available</p>
+       <p className="text-gray-500">No credentials available</p>
+      </div>
      </div>
-    </div>
-   </>
-  );
- }
+    </>
+   );
+  }
 
  // Helper function to get icon based on document type
  const getDocumentIcon = (type) => {
@@ -529,9 +546,39 @@ const ValidCredentials = ({ data }) => {
      <hr />
     </div>
     <div className="mt-4 md:mt-10">
-     <div className="ml-0 md:ml-[150px] grid grid-cols-1 md:grid-cols-3 gap-5">
-      {data.map((doc, index) => (
-       <div key={index} className="w-full flex flex-col items-center">
+      <div className="ml-0 md:ml-[150px] grid grid-cols-1 md:grid-cols-3 gap-5">
+       {showUploadedReceipt && (
+        <div className="w-full flex flex-col items-center">
+         <div>
+          <ImageDisplay
+           key={`uploaded-slip-${slip?.slip_id || "latest"}`}
+           imageUrl={slip.image}
+           alt="Uploaded Cashier Receipt"
+           className="w-[170px] h-[170px] md:h-[250px] object-cover border rounded-md"
+           fallback={
+            <div className="w-[170px] h-[170px] md:h-[200px] border rounded-md p-2 hover:shadow-md transition-shadow bg-gray-100 flex flex-col items-center justify-center">
+             <FaFileAlt size={40} className="text-primary" />
+             <p className="text-xs md:text-sm font-medium text-primary mt-4">
+              Uploaded Cashier Receipt
+             </p>
+             <p className="text-xs text-gray-400 mt-1">Preview not available</p>
+            </div>
+           }
+          />
+          <p className="text-xs md:text-sm font-medium text-primary mt-4 text-center">
+           Uploaded Cashier Receipt
+          </p>
+          <p className="text-xs text-gray-500 mt-1 text-center">
+           OR: {slip?.official_receipt || "N/A"}
+          </p>
+          <p className="text-xs text-gray-500 text-center">
+           Amount: {slip?.amount ?? "N/A"}
+          </p>
+         </div>
+        </div>
+       )}
+       {(data || []).map((doc, index) => (
+        <div key={index} className="w-full flex flex-col items-center">
         {doc.image ? (
          <div>
           {" "}

@@ -194,9 +194,15 @@ class ManagementController:
                         "slip_id": app.Application.slip.slip_id,
                         "image": f"/api/v1/staff/slip/{app.Application.slip.slip_id}/image" 
                             if app.Application.slip and app.Application.slip.image else None,
+                        "official_receipt": app.Application.slip.official_receipt,
                         "amount": app.Application.slip.total_amount,
                         "nature_of_payment": app.Application.slip.nature_of_payment
-                    } if hasattr(app.Application, 'slip') and app.Application.slip else None
+                    } if hasattr(app.Application, 'slip') and app.Application.slip else None,
+                    "has_uploaded_receipt": bool(
+                        hasattr(app.Application, 'slip')
+                        and app.Application.slip
+                        and app.Application.slip.image
+                    )
                 }
                 approved_applications.append(application_data)
 
@@ -223,7 +229,10 @@ class ManagementController:
                     ApplicationStatus.date,
                     func.row_number().over(
                         partition_by=ApplicationStatus.application_id,
-                        order_by=ApplicationStatus.date.desc()
+                        order_by=[
+                            ApplicationStatus.date.desc(),
+                            ApplicationStatus.status_id.desc()
+                        ]
                     ).label('rn')
                 ).subquery()
             )
@@ -244,7 +253,10 @@ class ManagementController:
                 .join(Vehicle, Application.plate_no == Vehicle.plate_no)
                 .outerjoin(Sticker, Application.sticker_id == Sticker.id)
                 # Add this line to include documents
-                .options(joinedload(Application.documents))
+                .options(
+                    joinedload(Application.documents),
+                    joinedload(Application.slip)
+                )
                 .join(
                     latest_status,
                     and_(
@@ -312,6 +324,7 @@ class ManagementController:
                     "vehicle_type": app.Vehicle.vehicle_type,
                     "sticker_number": app.sticker_id,
                     "date_submitted": app.submitted_date.strftime("%Y-%m-%d") if app.submitted_date else None,  # Modified this line
+                    "status": app.status,
                     "is_rejected": app.status == "Rejected",
                     "front_image": await get_vehicle_image_url(
                         app.Vehicle.plate_no, 
@@ -330,7 +343,16 @@ class ManagementController:
                             "image_url": f"/api/v1/staff/document/{doc.document_id}/image"
                         }
                         for doc in app.Application.documents
-                    ] if hasattr(app.Application, 'documents') and app.Application.documents else []
+                    ] if hasattr(app.Application, 'documents') and app.Application.documents else [],
+                    "slip": {
+                        "slip_id": app.Application.slip.slip_id,
+                        "image": f"/api/v1/staff/slip/{app.Application.slip.slip_id}/image"
+                            if app.Application.slip and app.Application.slip.image else None,
+                        "amount": app.Application.slip.total_amount,
+                        "official_receipt": app.Application.slip.official_receipt,
+                        "date": app.Application.slip.date.strftime("%Y-%m-%d")
+                            if app.Application.slip and app.Application.slip.date else None,
+                    } if hasattr(app.Application, 'slip') and app.Application.slip else None
                 }
                 application_history.append(application_data)
 

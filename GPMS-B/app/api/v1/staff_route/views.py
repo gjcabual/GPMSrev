@@ -97,12 +97,33 @@ class StaffView:
         """
         
         # Get application details first
-        query = select(Application).where(Application.application_id == application_id)
+        query = (
+            select(Application)
+            .options(joinedload(Application.slip))
+            .where(Application.application_id == application_id)
+        )
         result = await self.db.execute(query)
         application = result.scalar_one_or_none()
         
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
+
+        # Do not allow approval until applicant uploads receipt image,
+        # OR number, and amount from cashier.
+        if status == "Approved":
+            slip = application.slip
+            has_receipt_payload = bool(
+                slip
+                and slip.image
+                and slip.official_receipt
+                and slip.total_amount is not None
+                and float(slip.total_amount) > 0
+            )
+            if not has_receipt_payload:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot approve yet. Applicant must upload receipt image with OR number and amount."
+                )
 
         # Create status update
         new_status = ApplicationStatus(
@@ -153,6 +174,7 @@ class StaffView:
                 .joinedload(User.profiles),
                 joinedload(Application.vehicle)
                 .joinedload(Vehicle.documents),
+                joinedload(Application.slip),
                 joinedload(Application.assigned_drivers)
                 .joinedload(AssignedDriver.auth_driver)
                 .joinedload(AuthDriver.document),
@@ -215,19 +237,28 @@ class StaffView:
         Get available sticker number based on role and batch ranges
         Returns tuple of (sticker_number, batch_id)
         """
-        # Map application roles to batch sticker types
+        # Map application roles to batch sticker types (supports legacy/current labels).
         role_to_type = {
             "STUDENT": "Student",
             "EMPLOYEE": "Employee Parking",
+            "EMPLOYEE_PARKING": "Employee Parking",
             "DROP_OFF": "Drop Off",
-            "CONCESSIONAIRE": "Concessionaire"
+            "DROPOFF": "Drop Off",
+            "CONCESSIONAIRE": "Concessionaire",
         }
 
-        batch_type = role_to_type.get(role.upper())
+        normalized_role = (
+            str(role or "")
+            .strip()
+            .upper()
+            .replace("-", "_")
+            .replace(" ", "_")
+        )
+        batch_type = role_to_type.get(normalized_role)
         if not batch_type:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid application role for sticker generation"
+                detail=f"Invalid application role for sticker generation: {role}"
             )
 
         # Get active batch for the role type

@@ -118,10 +118,13 @@ class PendingApplicationItem(BaseModel):
     application_role: str
     vehicle_type: str
     assigned_drivers: list
+    slip_id: Optional[int] = None
     slip_image: Optional[str] = None
     slip_amount: Optional[float] = None
+    slip_official_receipt: Optional[str] = None
     slip_date: Optional[str] = None  # Change from datetime to str
     nature_of_payment: Optional[str] = None
+    has_uploaded_receipt: bool = False
     documents: list
 
 class PendingApplicationsListResponse(BaseModel):
@@ -208,6 +211,7 @@ class ApplicationListResponse(BaseModel):
     application_role: str
     vehicle_type: str
     status: str
+    has_uploaded_receipt: bool = False
     front_image: Optional[str] = None
     back_image: Optional[str] = None
 

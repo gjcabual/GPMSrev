@@ -217,6 +217,7 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
   const normalizedStatus = String(status).trim().toLowerCase();
   const canRequestSlip = normalizedStatus === "pending";
   const canUploadReceipt = normalizedStatus === "waiting for approval";
+  const hasUploadedReceipt = Boolean(application?.has_uploaded_receipt);
 
   const handleDelete = async () => {
    try {
@@ -362,21 +363,34 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
          </button>
         </>
        )}
-       {canUploadReceipt && (
+       {canUploadReceipt && !hasUploadedReceipt && (
         <button
-         onClick={() => setShowUploadModal(true)}
-         className="border border-primary rounded-md px-4 h-8 text-sm text-primary"
+          onClick={() => setShowUploadModal(true)}
+          className="border border-primary rounded-md px-4 h-8 text-sm text-primary"
         >
          Upload Receipt
         </button>
        )}
+       {canUploadReceipt && hasUploadedReceipt && (
+        <span className="inline-flex items-center rounded-md px-3 h-8 text-sm font-medium bg-green-100 text-green-700 border border-green-200">
+         Receipt Uploaded
+        </span>
+       )}
       </div>
-      {canUploadReceipt && (
+      {canUploadReceipt && !hasUploadedReceipt && (
        <div className="flex items-start gap-2">
         <BiInfoCircle size={20} className=" text-gray-500 flex-shrink-0" />
         <p className="text-xs sm:text-sm text-blue-600">
          Check your email for the slip, pay at the cashier, upload your
          receipt, then proceed to OCSSS Office.
+        </p>
+       </div>
+      )}
+      {canUploadReceipt && hasUploadedReceipt && (
+       <div className="flex items-start gap-2">
+        <BiInfoCircle size={20} className="text-green-600 flex-shrink-0" />
+        <p className="text-xs sm:text-sm text-green-700">
+         Your receipt has been uploaded. Please wait for staff approval.
         </p>
        </div>
       )}
@@ -701,7 +715,7 @@ const UploadSlipModal = ({
    const data = await response.json();
 
    if (!response.ok) {
-    throw new Error(data.message || "Failed to upload slip");
+    throw new Error(data.detail || data.message || "Failed to upload slip");
    }
 
    toast.success(`Slip uploaded successfully for ${applicationRole}`);

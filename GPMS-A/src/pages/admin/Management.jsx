@@ -18,6 +18,7 @@ export const Management = () => {
  const [currentApplicationId, setCurrentApplicationId] = useState(null);
  const [applicantName, setApplicantName] = useState(null);
  const [isLoading, setIsLoading] = useState(false);
+ const [isInputActive, setIsInputActive] = useState(false);
 
  // Add filter state for ApplicationLog
  const [logFilters, setLogFilters] = useState({
@@ -85,6 +86,17 @@ export const Management = () => {
      expire_at: doc.expire_at,
     })) || [];
 
+   // Include uploaded payment slip in logs/documents (for viewer + PDF).
+   if (app.slip?.image) {
+    documents.unshift({
+     document_id: `slip-${app.slip.slip_id || app.application_id}`,
+     type: "Payment Slip",
+     image_url: app.slip.image,
+     registered_at: app.slip.date || null,
+     expire_at: null,
+    });
+   }
+
    return {
     application_id: app.application_id,
     brand: app.brand,
@@ -95,7 +107,7 @@ export const Management = () => {
     vehicle_type: app.vehicle_type,
     processed_date: app.date_submitted,
     role: app.applicant_name ? "Applicant" : "Student",
-    status: app.is_rejected ? "Rejected" : "Approved",
+    status: app.status || (app.is_rejected ? "Rejected" : "Approved"),
     sticker_number: app.sticker_number || "Not Assigned",
     // Store images in both formats to ensure compatibility
     vehicle_images: {
@@ -187,6 +199,52 @@ export const Management = () => {
  useEffect(() => {
   getApprovedApplications();
  }, [searchQuery, vehicleType, timeFilter]); // Re-fetch when filters change
+
+ useEffect(() => {
+  const POLL_MS = 30000;
+  let intervalId = null;
+
+  const refreshCurrentView = () => {
+   if (document.visibilityState !== "visible") return;
+   if (isInputActive) return;
+   if (viewMode === "management") {
+    getApprovedApplications();
+    return;
+   }
+   if (currentApplicationId && applicantName) {
+    getApplicationLogs(currentApplicationId, applicantName, logFilters);
+   }
+  };
+
+  const startPolling = () => {
+   if (intervalId) clearInterval(intervalId);
+   intervalId = setInterval(refreshCurrentView, POLL_MS);
+  };
+
+  const stopPolling = () => {
+   if (intervalId) {
+    clearInterval(intervalId);
+    intervalId = null;
+   }
+  };
+
+  const handleVisibilityChange = () => {
+   if (document.visibilityState === "visible") {
+    refreshCurrentView();
+    startPolling();
+   } else {
+    stopPolling();
+   }
+  };
+
+  startPolling();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+
+  return () => {
+   stopPolling();
+   document.removeEventListener("visibilitychange", handleVisibilityChange);
+  };
+ }, [viewMode, currentApplicationId, applicantName, logFilters, searchQuery, vehicleType, timeFilter, isInputActive]);
 
  // Function to handle navigation back to main view
  const handleBackToManagement = () => {
@@ -300,11 +358,12 @@ export const Management = () => {
         </div>
        ) : (
         /* Pass filtered data to ApplicationList */
-        <ApplicationList
-         data={filteredApplications}
-         onSelect={setSelectedApplicant}
-         isManagement={true}
-        />
+         <ApplicationList
+          data={filteredApplications}
+          onSelect={setSelectedApplicant}
+          isManagement={true}
+          onModalStateChange={setIsInputActive}
+         />
        )}
       </div>
      </>

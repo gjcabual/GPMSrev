@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -178,6 +178,8 @@ export const ApplicationLog = ({
  const pdfContentRef = useRef(null);
  const [imageRefreshKey, setImageRefreshKey] = useState(Date.now());
  const [filteredData, setFilteredData] = useState(initialData || []);
+ const [sortOrder, setSortOrder] = useState("newest");
+ const previousSortRef = useRef("newest");
 
  // Store filter values in ref to persist across re-renders
  const filterValuesRef = useRef({
@@ -281,13 +283,49 @@ export const ApplicationLog = ({
  }, []);
 
  // Update selected item when filtered data changes
+ const sortedData = useMemo(() => {
+  const list = Array.isArray(filteredData) ? [...filteredData] : [];
+
+  const getSortTimestamp = (item) => {
+   const rawDate = item?.processed_date || item?.date;
+   const parsed = rawDate ? new Date(rawDate).getTime() : NaN;
+   if (!Number.isNaN(parsed)) return parsed;
+
+   const numericId = Number(item?.application_id);
+   return Number.isNaN(numericId) ? 0 : numericId;
+  };
+
+  list.sort((a, b) => {
+   const aTs = getSortTimestamp(a);
+   const bTs = getSortTimestamp(b);
+   if (aTs === bTs) {
+    return sortOrder === "oldest"
+     ? (Number(a?.application_id) || 0) - (Number(b?.application_id) || 0)
+     : (Number(b?.application_id) || 0) - (Number(a?.application_id) || 0);
+   }
+   return sortOrder === "oldest" ? aTs - bTs : bTs - aTs;
+  });
+
+  return list;
+ }, [filteredData, sortOrder]);
+
+ // Update selected item when filtered/sorted data changes
  useEffect(() => {
-  if (filteredData && filteredData.length > 0) {
-   setSelectedItem(filteredData[0]);
+  if (sortedData && sortedData.length > 0) {
+    const sortChanged = previousSortRef.current !== sortOrder;
+    previousSortRef.current = sortOrder;
+
+    setSelectedItem((prev) => {
+     if (sortChanged || !prev) return sortedData[0];
+     const stillExists = sortedData.find(
+      (item) => item.application_id === prev.application_id
+     );
+     return stillExists || sortedData[0];
+    });
   } else {
    setSelectedItem(null);
   }
- }, [filteredData]);
+ }, [sortedData]);
 
  useEffect(() => {
   if (selectedItem) {
@@ -651,20 +689,44 @@ export const ApplicationLog = ({
         className="w-full sm:w-auto bg-slate-100 border border-gray-300 rounded-md p-2 text-sm font-medium"
        />
        <select
-        value={filterValues.vehicle_type}
-        onChange={(e) => handleFilterChange("vehicle_type", e.target.value)}
-        className="w-full sm:w-auto bg-slate-100 border border-gray-300 rounded-md p-2 text-sm font-medium px-4 sm:px-10"
-       >
+         value={filterValues.vehicle_type}
+         onChange={(e) => handleFilterChange("vehicle_type", e.target.value)}
+         className="w-full sm:w-auto bg-slate-100 border border-gray-300 rounded-md p-2 text-sm font-medium px-4 sm:px-10"
+        >
         <option value="All">All</option>
         <option value="Car">Car</option>
         <option value="Truck">Truck</option>
         <option value="Motorcycle">Motorcycle</option>
         <option value="Van">Van</option>
-        <option value="Tricycle">Tricycle</option>
-       </select>
+         <option value="Tricycle">Tricycle</option>
+        </select>
+        <div className="relative w-full sm:w-auto">
+         <select
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+          className="w-full sm:min-w-[180px] appearance-none bg-white border border-gray-300 rounded-md p-2 pr-10 text-sm font-medium text-primary shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+         >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+         </select>
+         <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
+          <svg
+           xmlns="http://www.w3.org/2000/svg"
+           viewBox="0 0 20 20"
+           fill="currentColor"
+           className="h-4 w-4"
+          >
+           <path
+            fillRule="evenodd"
+            d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+            clipRule="evenodd"
+           />
+          </svg>
+         </span>
+        </div>
+       </div>
       </div>
-     </div>
-    )}
+     )}
 
     {/* HEADER */}
     <div className="bg-white p-3 sm:p-4 md:p-6 mb-2 rounded-md border border-gray-200">
@@ -986,8 +1048,8 @@ export const ApplicationLog = ({
       <h1>Date</h1>
      </div>
      <div className="mt-3 max-h-[300px] overflow-y-auto">
-      {filteredData && filteredData.length > 0 ? (
-       filteredData.map((item, index) => (
+      {sortedData && sortedData.length > 0 ? (
+       sortedData.map((item, index) => (
         <div
          key={index}
          className={`bg-slate-100 rounded-md p-2 sm:p-3 md:p-4 mb-2 cursor-pointer hover:bg-slate-200 transition ${

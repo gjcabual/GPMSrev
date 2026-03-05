@@ -1,7 +1,12 @@
 import { useState, useEffect } from "react";
 import { ApplicationInfo } from "./ApplicationInfo";
 
-export const ApplicationList = ({ data, onSelect, isManagement = false }) => {
+export const ApplicationList = ({
+ data,
+ onSelect,
+ isManagement = false,
+ onModalStateChange = null,
+}) => {
  const [selectedApplication, setSelectedApplication] = useState(null);
  const [applicationInfoId, setApplicationInfoId] = useState(null);
 
@@ -13,37 +18,77 @@ export const ApplicationList = ({ data, onSelect, isManagement = false }) => {
    document.body.style.overflow = "auto";
   }
 
+  if (onModalStateChange) {
+   onModalStateChange(Boolean(applicationInfoId));
+  }
+
   return () => {
    document.body.style.overflow = "auto";
+   if (onModalStateChange) {
+    onModalStateChange(false);
+   }
   };
- }, [applicationInfoId]);
+ }, [applicationInfoId, onModalStateChange]);
 
  // Process the data to handle different formats
  const processApplications = () => {
   if (Array.isArray(data)) {
-   // Handle data from Applicant.jsx which is already formatted
-   return data;
+    // Handle data from Applicant.jsx which is already formatted
+    return [...data];
   } else {
-   // Handle data from Management.jsx with pending_applications and approved_applications
-   return [
-    ...(data?.pending_applications || []),
-    ...(data?.approved_applications || []),
+    // Handle data from Management.jsx with pending_applications and approved_applications
+    return [
+     ...(data?.pending_applications || []),
+     ...(data?.approved_applications || []),
    ];
   }
  };
 
  const applications = processApplications();
+ const getSortTimestamp = (item) => {
+  const rawDate = isManagement
+   ? item?.applicant?.approve_at ||
+     item?.approve_at ||
+     item?.date ||
+     item?.appliedDate ||
+     item?.applicant?.appliedDate
+   : item?.appliedDate || item?.date || item?.applicant?.appliedDate;
+
+  if (!rawDate) return 0;
+  const parsed = new Date(rawDate).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+ };
+
+ const sortedApplications = [...applications].sort((a, b) => {
+  const aTs = getSortTimestamp(a);
+  const bTs = getSortTimestamp(b);
+  if (aTs !== bTs) return bTs - aTs; // newest first
+  const aId = String(a?.application_id || a?.applicant?.application_id || a?.id || "");
+  const bId = String(b?.application_id || b?.applicant?.application_id || b?.id || "");
+  return bId.localeCompare(aId);
+ });
 
  // Effect to set the first application as selected when applications change
  useEffect(() => {
-  if (applications.length > 0 && !selectedApplication) {
-   setSelectedApplication(applications[0]); // Default to first application only if no selection exists
-   onSelect(applications[0]); // Notify parent about the selection
-  } else if (applications.length === 0) {
+  if (sortedApplications.length > 0) {
+   const stillExists = selectedApplication
+    ? sortedApplications.find(
+       (item) => getApplicationId(item) === getApplicationId(selectedApplication)
+      )
+    : null;
+   const nextSelected = stillExists || sortedApplications[0];
+   if (
+    !selectedApplication ||
+    getApplicationId(nextSelected) !== getApplicationId(selectedApplication)
+   ) {
+    setSelectedApplication(nextSelected);
+    onSelect(nextSelected);
+   }
+  } else {
    setSelectedApplication(null);
    onSelect(null);
   }
- }, [applications, onSelect, selectedApplication]); // Added selectedApplication to dependency array
+ }, [sortedApplications, onSelect, selectedApplication]);
 
  // Handle row selection
  const handleSelect = (item) => {
@@ -168,7 +213,7 @@ export const ApplicationList = ({ data, onSelect, isManagement = false }) => {
 
    {/* Data Rows */}
    <div className="mt-2 space-y-2 overflow-y-auto h-[350px]">
-    {applications.map((item, index) => {
+     {sortedApplications.map((item, index) => {
      const isSelected = isItemSelected(item);
      const applicationId = getApplicationId(item);
 

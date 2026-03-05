@@ -50,10 +50,12 @@ class ApplicantApplicationHistory(BaseModel):
     vehicle_type: str = Field(..., description="Vehicle type (Car, Motorcycle, etc.)")
     sticker_number: Optional[str] = Field(None, description="Assigned sticker number if approved")
     date_submitted: str = Field(..., description="Application submission date in YYYY-MM-DD format")
+    status: str = Field(..., description="Latest application status")
     is_rejected: bool = Field(..., description="True if application was rejected")
     front_image: Optional[str] = Field(None, description="URL to vehicle front image")
     back_image: Optional[str] = Field(None, description="URL to vehicle back image")
     documents: List[DocumentDetail] = Field(default=[], description="List of application documents")
+    slip: Optional[dict] = Field(None, description="Uploaded payment slip details")
 
     class Config:
         schema_extra = {
@@ -67,9 +69,17 @@ class ApplicantApplicationHistory(BaseModel):
                 "vehicle_type": "Car",
                 "sticker_number": "STK001",
                 "date_submitted": "2024-03-29T10:00:00",
+                "status": "Approved",
                 "is_rejected": False,
                 "front_image": "http://example.com/front.jpg",
                 "back_image": "http://example.com/back.jpg",
+                "slip": {
+                    "slip_id": 1,
+                    "image": "/api/v1/staff/slip/1/image",
+                    "amount": 50,
+                    "official_receipt": "1234-123456789012",
+                    "date": "2026-03-04"
+                },
                 "documents": [
                     {
                         "document_id": 1,
@@ -119,6 +129,7 @@ class ApprovedSlipDetail(BaseModel):
     slip_id: int
     image: str | None
     amount: int
+    official_receipt: str | None = None
     nature_of_payment: str
 
     class Config:
@@ -151,6 +162,7 @@ class ApprovedApplicationDetail(BaseModel):
     applicant: ApprovedApplicant
     documents: List[ApprovedDocumentDetail]
     slip: Optional[ApprovedSlipDetail]
+    has_uploaded_receipt: bool = False
 
     class Config:
         from_attributes = True

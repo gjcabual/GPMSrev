@@ -42,6 +42,46 @@ export const Dashboard = () => {
   getDashboardData();
  }, [timeFilter, vehicleTypeFilter]);
 
+ useEffect(() => {
+  const POLL_MS = 30000;
+  let intervalId = null;
+
+  const refresh = () => {
+   if (document.visibilityState === "visible") {
+    getDashboardData();
+   }
+  };
+
+  const startPolling = () => {
+   if (intervalId) clearInterval(intervalId);
+   intervalId = setInterval(refresh, POLL_MS);
+  };
+
+  const stopPolling = () => {
+   if (intervalId) {
+    clearInterval(intervalId);
+    intervalId = null;
+   }
+  };
+
+  const handleVisibilityChange = () => {
+   if (document.visibilityState === "visible") {
+    getDashboardData();
+    startPolling();
+   } else {
+    stopPolling();
+   }
+  };
+
+  startPolling();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+
+  return () => {
+   stopPolling();
+   document.removeEventListener("visibilitychange", handleVisibilityChange);
+  };
+ }, [timeFilter, vehicleTypeFilter]);
+
  const downloadDashboardReport = async () => {
   await GenerateDashboardReport(
    overviewData,

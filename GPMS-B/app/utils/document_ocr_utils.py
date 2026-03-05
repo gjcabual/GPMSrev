@@ -24,7 +24,7 @@ def _valid_piston(s):
     if not s or len(s) > 20:
         return None
     s = s.strip()
-    m = re.match(r"^([\d.]+)\s*(cc|cm³|l|liter)?$", s, re.I)
+    m = re.match(r"^([\d.]+)\s*(cc|cmÂ³|l|liter)?$", s, re.I)
     if not m:
         return None
     num_part = m.group(1)
@@ -80,6 +80,46 @@ def _valid_make(s):
     return s[:50]
 
 
+def _normalize_plate_number(value: str):
+    if not value:
+        return None
+    raw = re.sub(r"[^A-Za-z0-9-]", "", str(value).upper())
+    if not raw:
+        return None
+    m = re.search(r"\b[A-Z]{1,4}-?\d{2,5}\b", raw)
+    return m.group(0) if m else raw[:15]
+
+
+def _clean_text_compact(value: str, max_len: int = 200):
+    if not value:
+        return None
+    s = str(value).replace("\t", " ").replace("\r", " ").replace("\n", " ").strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"^[=,:;.\-_/\\\s]+", "", s)
+    s = re.sub(r"[=,:;.\-_/\\\s]+$", "", s)
+    return s[:max_len] if s else None
+
+
+def _extract_file_number_fallback(text: str):
+    if not text:
+        return None
+    patterns = [
+        r"\b\d{4}[-]?\d{11}\b",
+        r"\b\d{15}\b",
+        r"\b\d{14,16}\b",
+    ]
+    for p in patterns:
+        m = re.search(p, text)
+        if not m:
+            continue
+        val = m.group(0).replace(" ", "")
+        digits = re.sub(r"\D", "", val)
+        if len(digits) >= 15:
+            digits = digits[:15]
+            return f"{digits[:4]}-{digits[4:]}"
+    return None
+
+
 def extract_cr_fields(text):
     """
     Extract CR-specific fields from OCR text: owner name, address, engine no., chassis no., plate number,
@@ -132,7 +172,7 @@ def extract_cr_fields(text):
             if "engine" in line_lower and ("no" in line_lower or "number" in line_lower or ":" in line_lower or "." in line):
                 rest = _safe_get_after_colon(line, 100) or line
                 match = re.search(r"[A-Za-z0-9\-]{4,25}", rest)
-                if match and not re.match(r"^\d{4}[-—\s]\d{11}$", (rest or "").strip()):
+                if match and not re.match(r"^\d{4}[-â€”\s]\d{11}$", (rest or "").strip()):
                     out["engine_no"] = _valid_engine_chassis(match.group(0).strip()) or out["engine_no"]
             # Chassis no.
             if "chassis" in line_lower:
@@ -140,7 +180,7 @@ def extract_cr_fields(text):
                 match = re.search(r"[A-Za-z0-9\-]{4,25}", rest)
                 if match:
                     out["chassis_no"] = _valid_engine_chassis(match.group(0).strip()) or out["chassis_no"]
-            # Make (single word like Honda, Yamaha) – reject garbled OCR
+            # Make (single word like Honda, Yamaha) â€“ reject garbled OCR
             if "make" in line_lower and "year" not in line_lower:
                 val = _safe_get_after_colon(line, 50) or (lines[i + 1].strip()[:50] if i + 1 < len(lines) else None)
                 if val:
@@ -159,7 +199,7 @@ def extract_cr_fields(text):
                 val = _safe_get_after_colon(line, 30) or (lines[i + 1].strip()[:30] if i + 1 < len(lines) else None)
                 out["piston_displacement"] = _valid_piston(val or "") or _valid_piston(line) or out["piston_displacement"]
                 if not out["piston_displacement"]:
-                    pd = re.search(r"[\d.]+\s*(?:cc|cm³|l|liter)", line_lower) or re.search(r"[\d.]+\s*cc", line_lower)
+                    pd = re.search(r"[\d.]+\s*(?:cc|cmÂ³|l|liter)", line_lower) or re.search(r"[\d.]+\s*cc", line_lower)
                     if pd:
                         out["piston_displacement"] = _valid_piston(pd.group(0)) or out["piston_displacement"]
             # Plate number
@@ -201,12 +241,221 @@ def extract_cr_fields(text):
     # Fallback: piston displacement (digits + optional cc) anywhere
     if not out["piston_displacement"]:
         for line in lines:
-            pd = re.search(r"\b([\d.]+\s*(?:cc|cm³|l|liter)?)\b", line, re.I)
+            pd = re.search(r"\b([\d.]+\s*(?:cc|cmÂ³|l|liter)?)\b", line, re.I)
             if pd:
                 v = _valid_piston(pd.group(1))
                 if v:
                     out["piston_displacement"] = v
                     break
+    # Final cleanup / normalization
+    out["owner_name"] = _clean_text_compact(out.get("owner_name"), max_len=120)
+    out["owner_address"] = _clean_text_compact(out.get("owner_address"), max_len=200)
+    out["plate_number"] = _normalize_plate_number(out.get("plate_number"))
+    out["body_type"] = _clean_text_compact(out.get("body_type"), max_len=40)
+    out["make"] = _valid_make(out.get("make")) if out.get("make") else None
+    return out
+
+
+def _normalize_license_number(value: str):
+    if not value:
+        return None
+    raw = str(value).strip().upper()
+    compact = re.sub(r"[^A-Z0-9-]", "", raw)
+    if not compact:
+        return None
+
+    # Strict match first:
+    # - segment1: 2 digits, or letter+2 digits (e.g. C01)
+    # - segment2: 2 digits
+    # - segment3: 6 digits
+    m = re.search(r"\b([A-Z]\d{2}|\d{2})[-]?(\d{2})[-]?(\d{6})\b", compact)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+
+    # Tolerant OCR mapping for confusing chars in numeric segments
+    digit_map = str.maketrans({
+        "O": "0",
+        "Q": "0",
+        "D": "0",
+        "I": "1",
+        "L": "1",
+        "Z": "2",
+        "S": "5",
+        "B": "8",
+        "G": "6",
+    })
+    m = re.search(r"\b([A-Z0-9]{2,3})[-]?([A-Z0-9]{2})[-]?([A-Z0-9]{6})\b", compact)
+    if m:
+        g1_raw = m.group(1)
+        g2 = m.group(2).translate(digit_map)
+        g3 = m.group(3).translate(digit_map)
+        if len(g1_raw) == 3 and g1_raw[0].isalpha():
+            g1 = g1_raw[0] + g1_raw[1:].translate(digit_map)
+            valid_g1 = bool(re.match(r"^[A-Z]\d{2}$", g1))
+        else:
+            g1 = g1_raw.translate(digit_map)
+            valid_g1 = bool(re.match(r"^\d{2}$", g1))
+        if valid_g1 and g2.isdigit() and g3.isdigit():
+            return f"{g1}-{g2}-{g3}"
+
+    # Fallback on compact text
+    alnum = re.sub(r"[^A-Z0-9]", "", compact)
+    if not alnum:
+        return None
+    if len(alnum) >= 11 and alnum[0].isalpha():
+        g1 = alnum[0] + alnum[1:3].translate(digit_map)
+        g2 = alnum[3:5].translate(digit_map)
+        g3 = alnum[5:11].translate(digit_map)
+        if re.match(r"^[A-Z]\d{2}$", g1) and g2.isdigit() and g3.isdigit():
+            return f"{g1}-{g2}-{g3}"
+    if len(alnum) >= 10:
+        g1 = alnum[:2].translate(digit_map)
+        g2 = alnum[2:4].translate(digit_map)
+        g3 = alnum[4:10].translate(digit_map)
+        if g1.isdigit() and g2.isdigit() and g3.isdigit():
+            return f"{g1}-{g2}-{g3}"
+    return None
+
+
+def _clean_person_name(value: str):
+    if not value:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+
+    # Remove common OCR junk characters and normalize spacing.
+    s = s.replace("â€”", "-").replace("â€“", "-")
+    s = re.sub(r"\s*=\s*", " ", s)  # remove isolated "=" tokens
+    s = re.sub(r"^[^A-Za-z]+", "", s)  # trim non-letter prefix
+    s = re.sub(r"[^A-Za-z,\-'.\s]", " ", s)  # keep common name punctuation only
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s*,\s*", ", ", s)
+    s = re.sub(r"\s*-\s*", "-", s)
+
+    # Reject obvious label/header lines
+    low = s.lower()
+    bad_markers = (
+        "last name, first name, middle name",
+        "name",
+        "license",
+        "driver",
+        "nationality",
+        "address",
+        "assistant secretary",
+        "attorney",
+        "atty",
+        "mendoza",
+        "dl codes",
+        "conditions",
+        "blood type",
+        "agency code",
+        "signature",
+        "none",
+    )
+    if any(m in low for m in bad_markers):
+        return None
+
+    # Must contain letters after cleanup.
+    if not re.search(r"[A-Za-z]{2,}", s):
+        return None
+    return s[:120]
+
+
+def extract_dl_fields(text):
+    out = {
+        "license_no": None,
+        "name": None,
+    }
+    if not text or not (isinstance(text, str) and text.strip()):
+        return out
+
+    try:
+        lines = [ln.strip() for ln in text.split("\n") if ln and ln.strip()]
+    except Exception:
+        return out
+
+    # License number extraction: supports optional leading letter (e.g. K19-10-004489)
+    # and OCR-confused characters in numeric parts.
+    try:
+        # Prefer line near "License No."
+        for line in lines:
+            ll = line.lower()
+            if "license" in ll and ("no" in ll or "number" in ll):
+                candidate = _safe_get_after_colon(line, 80) or line
+                normalized = _normalize_license_number(candidate)
+                if normalized:
+                    out["license_no"] = normalized
+                    break
+
+        # Fallback: search globally for possible license pattern
+        if not out["license_no"]:
+            for m in re.finditer(r"\b[A-Z0-9]{2,3}[-]?[A-Z0-9]{2}[-]?[A-Z0-9]{6}\b", text.upper()):
+                normalized = _normalize_license_number(m.group(0))
+                if normalized:
+                    out["license_no"] = normalized
+                    break
+    except Exception:
+        pass
+
+    # Name extraction heuristics
+    for i, line in enumerate(lines):
+        ll = line.lower()
+        # Most reliable DL pattern: value is on the next line after this label.
+        if "last name" in ll and "first name" in ll and i + 1 < len(lines):
+            candidate = lines[i + 1].strip()[:120]
+            cleaned = _clean_person_name(candidate)
+            if cleaned:
+                out["name"] = cleaned
+                break
+        if "name" in ll and ":" in line:
+            candidate = _safe_get_after_colon(line, 120)
+            cleaned = _clean_person_name(candidate)
+            if cleaned:
+                out["name"] = cleaned
+                break
+        if ("surname" in ll or "last name" in ll) and i + 1 < len(lines):
+            candidate = lines[i + 1].strip()[:120]
+            cleaned = _clean_person_name(candidate)
+            if cleaned:
+                out["name"] = cleaned
+                break
+
+    # Fallback: line with comma and proper name tokens (prefer full "LAST, FIRST MIDDLE")
+    if not out["name"]:
+        labels = (
+            "license", "driver", "restriction", "blood", "nationality", "sex", "address", "birth",
+            "agency", "conditions", "dl codes", "signature", "assistant", "atty"
+        )
+        comma_candidates = [
+            ln for ln in lines
+            if "," in ln
+            and re.search(r"[A-Za-z]{3,}", ln)
+            and not any(lb in ln.lower() for lb in labels)
+            and len(ln) <= 120
+        ]
+        if comma_candidates:
+            for cand in comma_candidates:
+                cleaned = _clean_person_name(cand)
+                if cleaned:
+                    out["name"] = cleaned
+                    break
+
+    # Final fallback: longest alphabetic line (excluding common labels)
+    if not out["name"]:
+        labels = (
+            "license", "driver", "restriction", "blood", "nationality", "sex", "address", "birth",
+            "agency", "conditions", "dl codes", "signature", "assistant", "atty"
+        )
+        text_candidates = [
+            ln for ln in lines
+            if re.search(r"[A-Za-z]{3,}", ln)
+            and not any(lb in ln.lower() for lb in labels)
+            and len(ln) <= 120
+        ]
+        if text_candidates:
+            out["name"] = _clean_person_name(max(text_candidates, key=len).strip())
+
     return out
 
 
@@ -226,6 +475,8 @@ def extract_document_data(uploaded_image_path, doc_type):
         "year_model": None,
         "body_type": None,
         "piston_displacement": None,
+        "license_no": None,
+        "name": None,
     }
     try:
         from app.utils.tesseract_ocr_utils import get_text_from_image
@@ -237,8 +488,13 @@ def extract_document_data(uploaded_image_path, doc_type):
                 ref_result = extract_document_reference(uploaded_text, doc_type)
                 if ref_result.get("is_valid"):
                     result["file_number"] = ref_result.get("file_number")
+                if not result["file_number"]:
+                    result["file_number"] = _extract_file_number_fallback(uploaded_text)
             except Exception as e:
                 logger.debug("extract_document_reference failed: %s", e)
+                if not result["file_number"]:
+                    result["file_number"] = _extract_file_number_fallback(uploaded_text)
+            result["file_number"] = _clean_text_compact(result.get("file_number"), max_len=30)
         try:
             dates = extract_dates(uploaded_text, doc_type)
             if dates:
@@ -260,6 +516,14 @@ def extract_document_data(uploaded_image_path, doc_type):
                     result["piston_displacement"] = cr.get("piston_displacement")
             except Exception as e:
                 logger.debug("extract_cr_fields failed: %s", e)
+        elif doc_type == "DL":
+            try:
+                dl = extract_dl_fields(uploaded_text)
+                if dl:
+                    result["license_no"] = dl.get("license_no")
+                    result["name"] = dl.get("name")
+            except Exception as e:
+                logger.debug("extract_dl_fields failed: %s", e)
     except Exception as e:
         logger.warning("extract_document_data failed: %s", e)
     return result
@@ -286,12 +550,12 @@ def document_type(doc_type):
 
 def check_expiration(date_str, doc_type="OR"):
     """Check document validity based on type"""
-    if not date_str:
-        return False, "No date found"
-    
     # For CR documents, always return valid
     if doc_type == "CR":
         return True, "Valid - CR documents do not expire"
+
+    if not date_str:
+        return False, "No date found"
     
     try:
         current_date = datetime.now()

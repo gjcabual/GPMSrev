@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status, Form, F
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from app.db.models.document import Document
+from app.db.models.slip import Slip
 from app.db.models.vehicle import Vehicle
 from app.db.models.profile import Profile
+from app.db.models.user import User
 from typing import List, Optional
 from datetime import date, datetime, timedelta
 import logging
@@ -160,7 +162,11 @@ async def extract_document_details(
             finally:
                 _safe_unlink(temp_path)
 
-        response = {"OR": {"file_number": None, "expiration_date": None}, "CR": {"file_number": None}, "DL": {"expiration_date": None}}
+        response = {
+            "OR": {"file_number": None, "expiration_date": None},
+            "CR": {"file_number": None},
+            "DL": {"expiration_date": None, "name": None, "license_number": None},
+        }
         for v in validation_results:
             r = v["result"]
             dt = v["type"]
@@ -186,6 +192,8 @@ async def extract_document_details(
             elif dt == "DL":
                 exp = r.get("dates", {}).get("expiration_date")
                 response["DL"]["expiration_date"] = exp
+                response["DL"]["name"] = r.get("name")
+                response["DL"]["license_number"] = r.get("license_no")
         return response
     except Exception as e:
         for v in validation_results:
@@ -252,6 +260,10 @@ async def extract_one_document(
             exp = result.get("dates", {}).get("expiration_date")
             if exp:
                 response["expiration_date"] = str(exp)
+            response["name"] = (str(result.get("name")).strip() if result.get("name") else "")
+            response["license_number"] = (
+                str(result.get("license_no")).strip() if result.get("license_no") else ""
+            )
         return response
     finally:
         _safe_unlink(temp_path)
@@ -271,6 +283,15 @@ async def create_application(
     confirmed_cr_file_number: str = Form(None),
     confirmed_or_expiration: str = Form(None),
     confirmed_dl_expiration: str = Form(None),
+    use_account_details_as_applicant: str = Form("true"),
+    first_name: str = Form(None),
+    last_name: str = Form(None),
+    email: str = Form(None),
+    contact_no: str = Form(None),
+    date_of_birth: str = Form(None),
+    gender: str = Form(None),
+    sex: str = Form(None),
+    address: str = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: UserInDB = Depends(get_current_applicant)
 ):
@@ -285,6 +306,54 @@ async def create_application(
                 status_code=404,
                 detail="User profile not found"
             )
+
+        use_account_details = str(use_account_details_as_applicant).strip().lower() not in ("false", "0", "no")
+        manual_gender = (gender or sex or "").strip()
+
+        if not use_account_details:
+            missing_owner_fields = []
+            if not (first_name or "").strip():
+                missing_owner_fields.append("first_name")
+            if not (last_name or "").strip():
+                missing_owner_fields.append("last_name")
+            if not (email or "").strip():
+                missing_owner_fields.append("email")
+            if not (contact_no or "").strip():
+                missing_owner_fields.append("contact_no")
+            if not (address or "").strip():
+                missing_owner_fields.append("address")
+            if not (date_of_birth or "").strip():
+                missing_owner_fields.append("date_of_birth")
+            if not manual_gender:
+                missing_owner_fields.append("gender")
+
+            if missing_owner_fields:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Missing required applicant fields: {', '.join(missing_owner_fields)}"
+                )
+
+            try:
+                parsed_birth_date = datetime.strptime(date_of_birth.strip(), "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid date_of_birth format. Use YYYY-MM-DD."
+                )
+
+            user_profile.first_name = first_name.strip()
+            user_profile.last_name = last_name.strip()
+            user_profile.contact_no = contact_no.strip()
+            user_profile.birth_date = parsed_birth_date
+            user_profile.sex = manual_gender.upper()
+            user_profile.address = address.strip()
+
+            if current_user.email != email.strip():
+                user_query = select(User).where(User.user_id == current_user.user_id)
+                user_result = await db.execute(user_query)
+                user = user_result.scalar_one_or_none()
+                if user:
+                    user.email = email.strip()
 
         # Get vehicle data
         vehicle_query = select(Vehicle).where(Vehicle.plate_no == plate_no)
@@ -644,6 +713,40 @@ async def get_document_image(
                 "Cache-Control": "max-age=3600"
             }
         )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/slip/{slip_id}/image")
+async def get_slip_image(
+    slip_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """Get uploaded cashier receipt image for the current applicant."""
+    try:
+        query = select(Slip).where(
+            and_(
+                Slip.slip_id == slip_id,
+                Slip.user_id == current_user.user_id
+            )
+        )
+        result = await db.execute(query)
+        slip = result.scalar_one_or_none()
+
+        if not slip or not slip.image:
+            raise HTTPException(status_code=404, detail="Slip image not found")
+
+        return Response(
+            content=slip.image,
+            media_type="image/jpeg",
+            headers={
+                "Content-Type": "image/jpeg",
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "max-age=3600"
+            }
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

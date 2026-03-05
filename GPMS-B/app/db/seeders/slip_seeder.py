@@ -16,6 +16,13 @@ class SlipSeeder(BaseSeeder):
         await self.clear()
         
         try:
+            role_price_map = {
+                "Student": 50,
+                "Employee Parking": 50,
+                "Drop Off": 50,
+                "Concessionaire": 100,
+            }
+
             # Get approved and pending applications using a direct SQL query
             query = """
             WITH LatestStatus AS (
@@ -52,7 +59,7 @@ class SlipSeeder(BaseSeeder):
                 receipt_num = f"{prefix}-{suffix}"
                 
                 slip = Slip(
-                    total_amount=25,  # Default student rate
+                    total_amount=role_price_map.get(getattr(app, "role", None), 50),
                     nature_of_payment="New Application Fee",
                     date=today - timedelta(days=3),
                     user_id=app.user_id,

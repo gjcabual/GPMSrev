@@ -68,15 +68,18 @@ export const Applicant = () => {
       type: doc.type,
       image: doc.image,
      })),
-     // Add slip information
-     slip: {
-      slip_id: app.application_id,
-      image: app.slip_image,
-      amount: app.slip_amount,
-      nature_of_payment: app.nature_of_payment,
-     },
-    })
-   );
+      // Add slip information
+      slip: {
+       slip_id: app.slip_id,
+       image: app.slip_image,
+       amount: app.slip_amount,
+       official_receipt: app.slip_official_receipt,
+       date: app.slip_date,
+       nature_of_payment: app.nature_of_payment,
+      },
+      has_uploaded_receipt: Boolean(app.has_uploaded_receipt),
+     })
+    );
 
    setApplications(formattedApplications);
 
