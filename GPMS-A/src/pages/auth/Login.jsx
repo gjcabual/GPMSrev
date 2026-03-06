@@ -54,7 +54,14 @@ export const Login = () => {
  return (
   <>
    <div className="min-h-screen w-full flex flex-col justify-center items-center bg-gray-100 p-4 gap-4">
-    <img src="/main_logo.png" alt="" className="w-48 md:w-[300px] z-50 flex-shrink-0" />
+    <button
+     type="button"
+     onClick={() => nav("/")}
+     className="z-50 flex-shrink-0 cursor-pointer"
+     aria-label="Go to landing page"
+    >
+     <img src="/main_logo.png" alt="GatePass logo" className="w-48 md:w-[300px]" />
+    </button>
     <img
      src="/auth/bg_login.png"
      alt=""
