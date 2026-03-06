@@ -4,6 +4,8 @@ import { HeaderManagement } from "../../components/management/HeaderManagement";
 import { AdminLayout } from "../../layouts/AdminLayout";
 import { buildUrl } from "../../utils/buildUrl";
 import { ApplicationLog } from "../../components/applicant/ApplicationLog";
+import { toast } from "sonner";
+import jsPDF from "jspdf";
 
 export const Management = () => {
  const [applications, setApplications] = useState([]);
@@ -19,6 +21,218 @@ export const Management = () => {
  const [applicantName, setApplicantName] = useState(null);
  const [isLoading, setIsLoading] = useState(false);
  const [isInputActive, setIsInputActive] = useState(false);
+ const [isDownloading, setIsDownloading] = useState(false);
+ const normalizedExportData = Array.isArray(filteredApplications)
+  ? filteredApplications
+  : [
+     ...(filteredApplications?.pending_applications || []),
+     ...(filteredApplications?.approved_applications || []),
+    ];
+ const toSafeString = (value) =>
+  value == null ? "" : String(value).replace(/\r?\n|\r/g, " ").trim();
+ const toCsvField = (value) => `"${toSafeString(value).replace(/"/g, '""')}"`;
+
+ const getExportRows = () => {
+  const rows = [...normalizedExportData];
+  rows.sort((a, b) => {
+   const aTs = new Date(
+    a?.applicant?.approve_at || a?.approve_at || a?.date_submitted || 0
+   ).getTime();
+   const bTs = new Date(
+    b?.applicant?.approve_at || b?.approve_at || b?.date_submitted || 0
+   ).getTime();
+   return (Number.isNaN(bTs) ? 0 : bTs) - (Number.isNaN(aTs) ? 0 : aTs);
+  });
+
+  return rows.map((item) => {
+   const rawApprovedAt =
+    item?.applicant?.approve_at ||
+    item?.approve_at ||
+    item?.appliedDate ||
+    item?.date ||
+    item?.applicant?.appliedDate ||
+    item?.date_submitted ||
+    "";
+
+   const parsedApprovedAt = rawApprovedAt ? new Date(rawApprovedAt) : null;
+   const approvedAt =
+    parsedApprovedAt && !Number.isNaN(parsedApprovedAt.getTime())
+     ? parsedApprovedAt.toISOString().split("T")[0]
+     : rawApprovedAt || "N/A";
+
+   return {
+    plate_number: item?.applicant?.vehicle?.plate_no || item?.plate_no || "N/A",
+    sticker_id:
+     item?.sticker?.sticker_id ||
+     item?.applicant?.vehicle?.sticker?.sticker_id ||
+     item?.sticker_number ||
+     "N/A",
+    applicant: item?.applicant?.name || item?.name || "N/A",
+    brand: item?.applicant?.vehicle?.brand || item?.brand || "",
+    model: item?.applicant?.vehicle?.model || item?.model || "N/A",
+    vehicle_type:
+     item?.applicant?.vehicle?.vehicle_type || item?.vehicle_type || "N/A",
+    approved_at: approvedAt,
+    status: item?.status || (item?.is_rejected ? "Rejected" : "Approved"),
+   };
+  });
+ };
+
+ const handleExportList = async (format = "pdf") => {
+  const rows = getExportRows();
+  if (!rows.length) {
+   toast.error("No data available to download");
+   return;
+  }
+
+  setIsDownloading(true);
+  try {
+   if (format === "json") {
+    const blob = new Blob([JSON.stringify(rows, null, 2)], {
+     type: "application/json;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `approved-applicants-${new Date().toISOString().split("T")[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success("Report downloaded successfully");
+    return;
+   }
+
+   if (format === "csv" || format === "excel") {
+    const headers = [
+     "Plate #",
+     "Sticker #",
+     "Applicant",
+     "Vehicle",
+     "Type",
+     "Approved At",
+     "Status",
+    ];
+    const csvRows = rows.map((r) =>
+     [
+      r.plate_number,
+      r.sticker_id,
+      r.applicant,
+      `${r.brand || ""} ${r.model || ""}`.trim() || "N/A",
+      r.vehicle_type,
+      r.approved_at,
+      r.status,
+     ]
+      .map(toCsvField)
+      .join(",")
+    );
+    const content = [headers.map(toCsvField).join(","), ...csvRows].join("\n");
+    const mime =
+     format === "excel"
+      ? "application/vnd.ms-excel;charset=utf-8;"
+      : "text/csv;charset=utf-8;";
+    const ext = format === "excel" ? "xls" : "csv";
+    const blob = new Blob([`\uFEFF${content}`], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `approved-applicants-${new Date().toISOString().split("T")[0]}.${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success("Report downloaded successfully");
+    return;
+   }
+
+   const pdf = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+   const margin = 28;
+   const rowHeight = 24;
+   const pageWidth = pdf.internal.pageSize.getWidth();
+   const pageHeight = pdf.internal.pageSize.getHeight();
+   const colWidths = [85, 95, 150, 170, 110, 115, 90];
+   const headers = [
+    "Plate #",
+    "Sticker #",
+    "Applicant",
+    "Vehicle",
+    "Type",
+    "Approved At",
+    "Status",
+   ];
+
+   const drawTableHeader = (y) => {
+    let x = margin;
+    pdf.setFillColor(245, 247, 250);
+    pdf.rect(margin, y - 16, colWidths.reduce((a, b) => a + b, 0), rowHeight, "F");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    headers.forEach((h, i) => {
+     pdf.text(h, x + 4, y);
+     x += colWidths[i];
+    });
+    pdf.setDrawColor(210, 214, 220);
+    pdf.line(margin, y + 8, margin + colWidths.reduce((a, b) => a + b, 0), y + 8);
+   };
+
+   const trimToWidth = (text, width) => {
+    const line = pdf.splitTextToSize(String(text ?? ""), width - 8)?.[0] ?? "";
+    return line;
+   };
+
+   pdf.setFont("helvetica", "bold");
+   pdf.setFontSize(16);
+   pdf.text("Approved Applicants List", margin, 34);
+   pdf.setFont("helvetica", "normal");
+   pdf.setFontSize(10);
+   pdf.text(`Generated: ${new Date().toLocaleString()}`, margin, 52);
+   pdf.text(`Total records: ${rows.length}`, pageWidth - margin - 120, 52);
+
+   let y = 76;
+   drawTableHeader(y);
+   y += rowHeight;
+
+   pdf.setFont("helvetica", "normal");
+   pdf.setFontSize(10);
+
+   rows.forEach((r) => {
+    if (y + rowHeight > pageHeight - margin) {
+      pdf.addPage();
+      y = 44;
+      drawTableHeader(y);
+      y += rowHeight;
+    }
+
+    const vehicleValue = `${r.brand || ""} ${r.model || ""}`.trim() || "N/A";
+    const values = [
+     r.plate_number,
+     r.sticker_id,
+     r.applicant,
+     vehicleValue,
+     r.vehicle_type,
+     r.approved_at,
+     r.status,
+    ];
+
+    let x = margin;
+    values.forEach((v, i) => {
+     pdf.text(trimToWidth(v, colWidths[i]), x + 4, y);
+     x += colWidths[i];
+    });
+    pdf.setDrawColor(238, 241, 245);
+    pdf.line(margin, y + 8, margin + colWidths.reduce((a, b) => a + b, 0), y + 8);
+    y += rowHeight;
+   });
+
+   pdf.save(`approved-applicants-${new Date().toISOString().split("T")[0]}.pdf`);
+   toast.success("Report downloaded successfully");
+  } catch (error) {
+   console.error("Failed to generate management report:", error);
+   toast.error("Failed to generate PDF report.");
+  } finally {
+   setIsDownloading(false);
+  }
+ };
 
  // Add filter state for ApplicationLog
  const [logFilters, setLogFilters] = useState({
@@ -284,8 +498,8 @@ export const Management = () => {
     ) : (
      ""
     )}
-    {viewMode === "management" ? (
-     <div className="flex gap-2">
+     {viewMode === "management" ? (
+      <div className="hidden sticky top-0 z-40 bg-gray-50/95 backdrop-blur-sm border border-gray-200 rounded-md px-2 py-2 flex gap-2">
       {/* Search Input */}
       <div className="relative w-full max-w-sm">
        <input
@@ -335,6 +549,59 @@ export const Management = () => {
        <option value="month">This Month</option>
        <option value="year">This Year</option>
       </select>
+      <details className="relative">
+       <summary
+        className={`h-10 bg-primary text-white font-regular px-4 rounded-md hover:bg-primary/90 transition-colors flex items-center justify-center list-none cursor-pointer ${
+         isDownloading || !normalizedExportData.length
+          ? "opacity-70 cursor-not-allowed pointer-events-none"
+          : ""
+        }`}
+       >
+        {isDownloading ? "Generating..." : "Export"}
+       </summary>
+       <div className="absolute right-0 mt-2 w-44 rounded-md border border-gray-200 bg-white shadow-lg z-20 py-1">
+        <button
+         type="button"
+         onClick={(e) => {
+          handleExportList("pdf");
+          e.currentTarget.closest("details")?.removeAttribute("open");
+         }}
+         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+        >
+         PDF (current)
+        </button>
+        <button
+         type="button"
+         onClick={(e) => {
+          handleExportList("csv");
+          e.currentTarget.closest("details")?.removeAttribute("open");
+         }}
+         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+        >
+         CSV
+        </button>
+        <button
+         type="button"
+         onClick={(e) => {
+          handleExportList("excel");
+          e.currentTarget.closest("details")?.removeAttribute("open");
+         }}
+         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+        >
+         Excel (.xls)
+        </button>
+        <button
+         type="button"
+         onClick={(e) => {
+          handleExportList("json");
+          e.currentTarget.closest("details")?.removeAttribute("open");
+         }}
+         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+        >
+         JSON
+        </button>
+       </div>
+      </details>
      </div>
     ) : (
      <button
@@ -354,6 +621,107 @@ export const Management = () => {
        data={filteredApplications}
        selectData={selectedApplicant}
       />
+      <div className="mt-4 sticky top-0 z-40 bg-gray-50/95 backdrop-blur-sm border border-gray-200 rounded-md px-2 py-2 flex gap-2 justify-end">
+       <div className="relative w-full max-w-[280px]">
+        <input
+         type="text"
+         placeholder="Search sticker number..."
+         className="h-9 w-full bg-gray-200 rounded-md outline-none pl-9 pr-3 text-sm"
+         value={searchQuery}
+         onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <svg
+         className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 w-5 h-5"
+         xmlns="http://www.w3.org/2000/svg"
+         fill="none"
+         viewBox="0 0 24 24"
+         stroke="currentColor"
+        >
+         <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M21 21l-4.35-4.35m2.35-6.65a7 7 0 11-14 0 7 7 0 0114 0z"
+         />
+        </svg>
+       </div>
+
+       <select
+        className="h-9 bg-gray-200 rounded-md outline-none px-4 text-sm"
+        value={vehicleType}
+        onChange={(e) => setVehicleType(e.target.value)}
+       >
+        <option value="All">All Vehicles</option>
+        <option value="Truck">Truck</option>
+        <option value="Motorcycle">Motor Cycle</option>
+        <option value="Car">Car</option>
+        <option value="Tricycle">Tricycle</option>
+       </select>
+
+       <select
+        className="h-9 bg-gray-200 rounded-md outline-none px-4 text-sm"
+        value={timeFilter}
+        onChange={(e) => setTimeFilter(e.target.value)}
+       >
+        <option value="today">Today</option>
+        <option value="week">This Week</option>
+        <option value="month">This Month</option>
+        <option value="year">This Year</option>
+       </select>
+       <details className="relative">
+        <summary
+         className={`h-9 bg-primary text-white font-regular px-3 rounded-md hover:bg-primary/90 transition-colors flex items-center justify-center list-none cursor-pointer text-sm ${
+          isDownloading || !normalizedExportData.length
+           ? "opacity-70 cursor-not-allowed pointer-events-none"
+           : ""
+         }`}
+        >
+         {isDownloading ? "Generating..." : "Export"}
+        </summary>
+        <div className="absolute right-0 mt-2 w-44 rounded-md border border-gray-200 bg-white shadow-lg z-20 py-1">
+         <button
+          type="button"
+          onClick={(e) => {
+           handleExportList("pdf");
+           e.currentTarget.closest("details")?.removeAttribute("open");
+          }}
+          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+         >
+          PDF (current)
+         </button>
+         <button
+          type="button"
+          onClick={(e) => {
+           handleExportList("csv");
+           e.currentTarget.closest("details")?.removeAttribute("open");
+          }}
+          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+         >
+          CSV
+         </button>
+         <button
+          type="button"
+          onClick={(e) => {
+           handleExportList("excel");
+           e.currentTarget.closest("details")?.removeAttribute("open");
+          }}
+          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+         >
+          Excel (.xls)
+         </button>
+         <button
+          type="button"
+          onClick={(e) => {
+           handleExportList("json");
+           e.currentTarget.closest("details")?.removeAttribute("open");
+          }}
+          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+         >
+          JSON
+         </button>
+        </div>
+       </details>
+      </div>
 
       <div className="mt-10">
        {isLoading ? (

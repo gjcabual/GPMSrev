@@ -125,16 +125,16 @@ class ManagementController:
                 today = datetime.now().date()
                 time_filter = time_filter.lower()  # Convert to lowercase for case-insensitive comparison
                 if time_filter == "today":
-                    stmt = stmt.where(func.date(Application.date) == today)
+                    stmt = stmt.where(func.date(latest_status.c.date) == today)
                 elif time_filter == "week":
                     week_ago = today - timedelta(days=7)
-                    stmt = stmt.where(func.date(Application.date) >= week_ago)
+                    stmt = stmt.where(func.date(latest_status.c.date) >= week_ago)
                 elif time_filter == "month":
                     month_ago = today - timedelta(days=30)
-                    stmt = stmt.where(func.date(Application.date) >= month_ago)
+                    stmt = stmt.where(func.date(latest_status.c.date) >= month_ago)
                 elif time_filter == "year":
                     year_ago = today - timedelta(days=365)
-                    stmt = stmt.where(func.date(Application.date) >= year_ago)
+                    stmt = stmt.where(func.date(latest_status.c.date) >= year_ago)
 
             result = await self.db.execute(stmt)
             applications = result.unique().all()  

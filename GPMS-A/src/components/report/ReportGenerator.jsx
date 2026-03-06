@@ -243,7 +243,7 @@ const ReportGenerator = ({ reports }) => {
      Generating...
     </>
    ) : (
-    "Download Report"
+    "Export"
    )}
   </button>
  );
