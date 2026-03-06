@@ -343,8 +343,8 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
        </div>
       </div>
      </div>
-     <div className="mt-4 sm:mt-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-      <div className="flex items-center gap-2">
+      <div className="mt-4 sm:mt-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+       <div className="flex items-center gap-2">
        {canRequestSlip && (
         <>
          <button
@@ -376,10 +376,18 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
          Receipt Uploaded
         </span>
        )}
-      </div>
-      {canUploadReceipt && !hasUploadedReceipt && (
-       <div className="flex items-start gap-2">
-        <BiInfoCircle size={20} className=" text-gray-500 flex-shrink-0" />
+       </div>
+       {canRequestSlip && (
+        <div className="flex items-start gap-2">
+         <BiInfoCircle size={20} className="text-blue-600 flex-shrink-0" />
+         <p className="text-xs sm:text-sm text-blue-600">
+          Your application is pending. Click Get Payment Slip to continue.
+         </p>
+        </div>
+       )}
+       {canUploadReceipt && !hasUploadedReceipt && (
+        <div className="flex items-start gap-2">
+         <BiInfoCircle size={20} className=" text-gray-500 flex-shrink-0" />
         <p className="text-xs sm:text-sm text-blue-600">
          Check your email for the slip, pay at the cashier then upload your
          receipt.
