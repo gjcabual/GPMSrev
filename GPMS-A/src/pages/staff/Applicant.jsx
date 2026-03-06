@@ -113,7 +113,11 @@ export const Applicant = () => {
     backImage = backImage.replace("/api/v1", "");
    }
 
-   return {
+    const resolvedStatus =
+     app.status ||
+     (app.is_rejected ? "Rejected" : "Pending");
+
+    return {
     // Existing transformation code
     application_id: app.application_id,
     brand: app.brand,
@@ -124,7 +128,7 @@ export const Applicant = () => {
     processed_date: app.date_submitted,
     vehicle_type: app.vehicle_type,
     role: app.role || app.applicant_role || "Student",
-    status: app.is_rejected ? "Rejected" : "Approved",
+     status: resolvedStatus,
     sticker_number: app.sticker_number || "Not Assigned",
     // Store images in both formats to ensure compatibility
     vehicle_images: {

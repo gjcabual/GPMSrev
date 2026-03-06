@@ -136,7 +136,7 @@ export const Login = () => {
         onClick={() => nav("/forgot-password")}
         className="text-xs md:text-sm text-gray-500 font-medium cursor-pointer"
        >
-        forgot password?
+        Forgot password?
        </p>
       </div>
      </div>
@@ -147,6 +147,17 @@ export const Login = () => {
       >
        Login
       </button>
+      {(role === "admin" || role === "staff") && (
+       <p className="text-sm font-medium font-light text-gray-500">
+        Don't have an account yet?{" "}
+        <span
+         onClick={() => nav("/applicant-signup")}
+         className="italic text-primary font-medium cursor-pointer hover:underline"
+        >
+         Sign up here
+        </span>
+       </p>
+      )}
      </div>
     </div>
    </div>

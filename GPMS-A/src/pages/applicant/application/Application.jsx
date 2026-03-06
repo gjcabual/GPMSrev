@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { IoMdCloudUpload } from "react-icons/io";
 import { buildUrl } from "../../../utils/buildUrl";
@@ -14,7 +14,7 @@ const steps = [
  "Confirm Email Address",
  "Documents",
  "Vehicle Information",
- "Confirm document details",
+ "Confirm details",
 ];
 
 /** Normalize date string to YYYY-MM-DD for input type="date". */
@@ -100,38 +100,64 @@ function normalizeDateToISO(value) {
  return s;
 }
 
-function autoFormatMMDDYYYYInput(value) {
- const digits = String(value ?? "").replace(/\D/g, "").slice(0, 8);
+function autoFormatMMDDYYYYInput(value, prevValue = "") {
+ const raw = String(value ?? "");
+ const prev = String(prevValue ?? "");
+ const digits = raw.replace(/\D/g, "").slice(0, 8);
  if (digits.length < 2) return digits;
- if (digits.length === 2) return `${digits}/`;
+ if (digits.length === 2) {
+  if (prev.endsWith("/") && raw === digits) return digits;
+  return `${digits}/`;
+ }
  if (digits.length < 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
- if (digits.length === 4) return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/`;
- return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+ const base = `${digits.slice(0, 2)}/${digits.slice(2, 4)}`;
+ if (digits.length === 4) {
+  if (prev.endsWith("/") && raw === base) return base;
+  return `${base}/`;
+ }
+ return `${base}/${digits.slice(4)}`;
 }
 
-function autoFormatLicenseNumberInput(value) {
+function autoFormatLicenseNumberInput(value, prevValue = "") {
  const raw = String(value ?? "").toUpperCase();
+ const prev = String(prevValue ?? "");
  const compact = raw.replace(/[^A-Z0-9]/g, "");
  if (!compact) return "";
 
  // Optional leading letter format: e.g. K19-10-004489
  const hasPrefixLetter = /^[A-Z]/.test(compact);
- if (hasPrefixLetter) {
+  if (hasPrefixLetter) {
   const prefix = compact.charAt(0);
   const digits = compact.slice(1).replace(/\D/g, "").slice(0, 10);
   if (digits.length < 2) return `${prefix}${digits}`;
-  if (digits.length === 2) return `${prefix}${digits}-`;
+  if (digits.length === 2) {
+   const candidate = `${prefix}${digits}`;
+   if (prev.endsWith("-") && raw === candidate) return candidate;
+   return `${candidate}-`;
+  }
   if (digits.length < 4) return `${prefix}${digits.slice(0, 2)}-${digits.slice(2)}`;
-  if (digits.length === 4) return `${prefix}${digits.slice(0, 2)}-${digits.slice(2, 4)}-`;
+  if (digits.length === 4) {
+   const candidate = `${prefix}${digits.slice(0, 2)}-${digits.slice(2, 4)}`;
+   if (prev.endsWith("-") && raw === candidate) return candidate;
+   return `${candidate}-`;
+  }
   return `${prefix}${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
  }
 
  // Pure numeric format: e.g. 19-10-004489
  const digits = compact.replace(/\D/g, "").slice(0, 10);
  if (digits.length < 2) return digits;
- if (digits.length === 2) return `${digits}-`;
+ if (digits.length === 2) {
+  const candidate = `${digits}`;
+  if (prev.endsWith("-") && raw === candidate) return candidate;
+  return `${candidate}-`;
+ }
  if (digits.length < 4) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
- if (digits.length === 4) return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-`;
+ if (digits.length === 4) {
+  const candidate = `${digits.slice(0, 2)}-${digits.slice(2, 4)}`;
+  if (prev.endsWith("-") && raw === candidate) return candidate;
+  return `${candidate}-`;
+ }
  return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
 }
 
@@ -155,13 +181,14 @@ export const Application = () => {
  const [hasApiError, setHasApiError] = useState(false);
  const [isEmailVerified, setIsEmailVerified] = useState(false);
  const [agreedToTerms, setAgreedToTerms] = useState(false);
- const [useAccountDetailsAsApplicant, setUseAccountDetailsAsApplicant] = useState(true);
- const [applicantProfileData, setApplicantProfileData] = useState(null);
+ const [useAccountDetailsAsApplicant] = useState(true);
  const [documentFilesRef, setDocumentFilesRef] = useState({
   or: null,
   cr: null,
   dl: null,
  });
+ const [documentStepIndex, setDocumentStepIndex] = useState(0);
+ const [reopenDocAt, setReopenDocAt] = useState(null);
  const [extractedDocDetails, setExtractedDocDetails] = useState({
   OR: { file_number: "", expiration_date: "" },
   CR: { file_number: "", date: "", owner_name: "", owner_address: "", plate_number: "", make: "", year_model: "", body_type: "", piston_displacement: "" },
@@ -195,6 +222,10 @@ export const Application = () => {
   front_image: null,
   back_image: null,
  });
+
+ const handleApplicantProfileData = useCallback((data) => {
+  setProfileData(data);
+ }, []);
 
  const choice = ["Employee Parking", "Student", "Drop Off", "Concessionaire"];
 
@@ -265,17 +296,13 @@ useEffect(() => {
    case 0:
     return (
      <Step1
-      setProfileEmail={setProfileEmail}
-      setProfileData={(data) => {
-       setProfileData(data);
-       setApplicantProfileData(data);
-      }}
-      setProfileImage={setProfileImage}
-      setHasApiError={setHasApiError}
-      setAgreedToTerms={setAgreedToTerms}
-      useAccountDetailsAsApplicant={useAccountDetailsAsApplicant}
-      setUseAccountDetailsAsApplicant={setUseAccountDetailsAsApplicant}
-     />
+       setProfileEmail={setProfileEmail}
+       setProfileData={handleApplicantProfileData}
+       setProfileImage={setProfileImage}
+       setHasApiError={setHasApiError}
+       setAgreedToTerms={setAgreedToTerms}
+       useAccountDetailsAsApplicant={useAccountDetailsAsApplicant}
+      />
     );
    case 1:
     return (
@@ -291,13 +318,19 @@ useEffect(() => {
     );
    case 2:
     return (
-     <Step4
-      setDocumentFiles={setDocumentFilesRef}
-      documentFiles={documentFilesRef}
-      setHasApiError={setHasApiError}
-      setExtractedDocDetails={setExtractedDocDetails}
-      setConfirmedDocDetails={setConfirmedDocDetails}
-     />
+      <Step4
+       setDocumentFiles={setDocumentFilesRef}
+       documentFiles={documentFilesRef}
+       extractedDocDetails={extractedDocDetails}
+       confirmedDocDetails={confirmedDocDetails}
+       currentDocIndex={documentStepIndex}
+       setCurrentDocIndex={setDocumentStepIndex}
+       reopenDocAt={reopenDocAt}
+       onReopenHandled={() => setReopenDocAt(null)}
+       setHasApiError={setHasApiError}
+       setExtractedDocDetails={setExtractedDocDetails}
+       setConfirmedDocDetails={setConfirmedDocDetails}
+      />
     );
    case 3:
     return (
@@ -384,31 +417,7 @@ useEffect(() => {
 
     // Add application type from choice selection
     formData.append("role", selected);
-    formData.append(
-     "use_account_details_as_applicant",
-     useAccountDetailsAsApplicant ? "true" : "false"
-    );
-
-    // If applying for someone else, include the manually entered applicant details
-    if (!useAccountDetailsAsApplicant && applicantProfileData) {
-     const ownerFields = [
-      "first_name",
-      "last_name",
-      "email",
-      "contact_no",
-      "address",
-      "birth_date",
-      "sex",
-     ];
-
-     ownerFields.forEach((field) => {
-      const value = applicantProfileData?.[field];
-      if (value !== null && value !== undefined && String(value).trim() !== "") {
-       const backendField = field === "birth_date" ? "date_of_birth" : field;
-       formData.append(backendField, String(value).trim());
-      }
-     });
-    }
+    formData.append("use_account_details_as_applicant", "true");
 
    // Add vehicle data
    Object.entries(vehicleData).forEach(([key, value]) => {
@@ -503,23 +512,32 @@ useEffect(() => {
      driverFormData.append("driver_ids", driverIds);
 
      const driverResponse = await fetch(
-      buildUrl(`/applicant/application/${applicationId}/assign-drivers`),
-      {
-       method: "POST",
+       buildUrl(`/applicant/application/${applicationId}/assign-drivers`),
+       {
+        method: "POST",
        headers: {
         Authorization: `Bearer ${localStorage.getItem("token")}`,
        },
        body: driverFormData,
       }
-     );
+      );
 
-     if (!driverResponse.ok) {
-      console.error("Failed to assign drivers:", await driverResponse.json());
+      if (!driverResponse.ok) {
+       const assignError = await driverResponse.json().catch(() => ({}));
+       console.error("Failed to assign drivers:", assignError);
+       toast.error(
+        assignError?.detail ||
+         assignError?.message ||
+         "Application was created, but assigning selected drivers failed."
+       );
+      }
+     } catch (driverError) {
+      console.error("Error assigning drivers:", driverError);
+      toast.error(
+       "Application was created, but assigning selected drivers failed."
+      );
      }
-    } catch (driverError) {
-     console.error("Error assigning drivers:", driverError);
     }
-   }
 
    toast.success("Application submitted successfully!");
 
@@ -543,6 +561,16 @@ useEffect(() => {
    if (currentStep === 0) {
     setType(true);
    } else {
+    if (currentStep === 2 && documentStepIndex === 0) {
+     nav("/applicant/dashboard");
+     return;
+    }
+    if (currentStep === 2 && documentStepIndex > 0) {
+     const target = Math.max(0, documentStepIndex - 1);
+     setDocumentStepIndex(target);
+     setReopenDocAt(target);
+     return;
+    }
     // Clear vehicle images when navigating back to Vehicle step from Confirm step
     if (currentStep === 4) {
      setVehicleFormData((prev) => ({
@@ -621,12 +649,13 @@ useEffect(() => {
     return;
    }
   } else if (currentStep === 2) {
-   // Documents step: require all docs before proceeding to Vehicle
-   if (!documentFilesRef?.or || !documentFilesRef?.cr || !documentFilesRef?.dl) {
-    toast.error("Please upload and confirm all required documents (OR, CR, DL) before proceeding.");
-    return;
-   }
-   setCurrentStep(3);
+    // Documents step: require all docs before proceeding to Vehicle
+    if (!documentFilesRef?.or || !documentFilesRef?.cr || !documentFilesRef?.dl) {
+     toast.error("Please upload and confirm all required documents (OR, CR, DL) before proceeding.");
+     return;
+    }
+    setDocumentStepIndex(DOC_ORDER.length);
+    setCurrentStep(3);
   } else if (currentStep === 3) {
    // Vehicle step: validate and submit vehicle, then go to Confirm
    if (!vehicleData) {
@@ -753,7 +782,7 @@ useEffect(() => {
 
  return (
   <>
-   <div className="m-5 h-screen flex flex-col items-center justify-center">
+   <div className="m-5 min-h-screen flex flex-col items-center justify-start py-4">
     {type && (
      <div className="w-full md:w-[700px] h-auto bg-white border broder-gray-100 flex flex-col rounded-lg p-4 md:p-8 text-center space-y-5">
       <h1 className="text-xl md:text-3xl font-bold text-primary">
@@ -793,12 +822,13 @@ useEffect(() => {
        >
         Proceed
        </button>
-       <button
+       <p
+       type="button"
         onClick={handleBack}
-        className="text-sm font-light text-gray-500 hover:text-primary transition-colors cursor-pointer"
+        className="text-sm font-light text-gray-500 hover:text-primary transition-colors cursor-pointer hover:text-primary/80"
        >
         Back
-       </button>
+       </p>
       </div>
      </div>
     )}
@@ -905,6 +935,16 @@ const emptyProfileForm = {
   has_image: false,
 };
 
+const normalizeProfilePayload = (data) => {
+ if (!data || typeof data !== "object" || Array.isArray(data)) {
+  return { ...emptyProfileForm };
+ }
+ return {
+  ...emptyProfileForm,
+  ...data,
+ };
+};
+
 const Step1 = ({
  setProfileEmail,
  setProfileData,
@@ -912,7 +952,6 @@ const Step1 = ({
  setHasApiError,
  setAgreedToTerms,
  useAccountDetailsAsApplicant,
- setUseAccountDetailsAsApplicant,
 }) => {
  const [image, setImage] = useState(null);
  const [previewImage, setPreviewImage] = useState(null);
@@ -951,18 +990,13 @@ const Step1 = ({
      throw new Error("Failed to fetch profile data");
     }
 
-    const data = await response.json();
-    fetchedProfileRef.current = data;
+     const data = await response.json();
+     const normalizedData = normalizeProfilePayload(data);
+     fetchedProfileRef.current = normalizedData;
 
-    if (useAccountDetailsAsApplicant) {
-     setLocalProfileData(data);
-     setProfileData(data);
-     if (data.email) setProfileEmail(data.email);
-    } else {
-     setLocalProfileData({ ...emptyProfileForm });
-     setProfileData({ ...emptyProfileForm });
-     setProfileEmail("");
-    }
+     setLocalProfileData(normalizedData);
+     setProfileData(normalizedData);
+     if (normalizedData.email) setProfileEmail(normalizedData.email);
    } catch (error) {
     console.error("Error fetching profile data:", error);
     toast.error(
@@ -977,21 +1011,14 @@ const Step1 = ({
   fetchProfileData();
  }, [setProfileEmail, setProfileData]);
 
- // When "use account details" is toggled: fill from fetched profile or clear form
+ // Keep step 1 in account-details mode only (verification)
  useEffect(() => {
   if (loading) return;
-  if (useAccountDetailsAsApplicant && fetchedProfileRef.current) {
-   const data = fetchedProfileRef.current;
+  if (fetchedProfileRef.current) {
+   const data = normalizeProfilePayload(fetchedProfileRef.current);
    setLocalProfileData(data);
    setProfileData(data);
    if (data.email) setProfileEmail(data.email);
-  } else if (!useAccountDetailsAsApplicant) {
-   setLocalProfileData({ ...emptyProfileForm });
-   setProfileData({ ...emptyProfileForm });
-   setProfileEmail("");
-   setImage(null);
-   setPreviewImage(null);
-   setProfileImage(null);
   }
  }, [useAccountDetailsAsApplicant]);
 
@@ -1016,14 +1043,13 @@ const Step1 = ({
   prevAllFieldsFilledRef.current = allFieldsFilled;
  }, [allFieldsFilled, agreeToTerms]);
 
- const hasShownProfileNoticeRef = useRef(false);
  useEffect(() => {
-  if (useAccountDetailsAsApplicant && !loading && !hasShownProfileNoticeRef.current) {
-   hasShownProfileNoticeRef.current = true;
-   toast.info("Your profile details are used for this application. Update them in the Profile section if needed.", { duration: 5000 });
-  }
-  if (!useAccountDetailsAsApplicant) hasShownProfileNoticeRef.current = false;
- }, [useAccountDetailsAsApplicant, loading]);
+  if (loading) return;
+  toast.info(
+   "Your profile details are used for this application. Update them in the Profile section if needed.",
+   { duration: 5000 }
+  );
+ }, [loading]);
 
  const handleConfirmCheckboxClick = (e) => {
   if (!allFieldsFilled) {
@@ -1138,23 +1164,7 @@ const Step1 = ({
    <div className="p-4 md:p-5 flex flex-col justify-between h-full">
     <h1 className="text-lg md:text-xl font-bold">Personal Information</h1>
 
-    <div className="flex items-center gap-2 mt-3 mb-1">
-     <input
-      type="checkbox"
-      id="use-account-details"
-      checked={useAccountDetailsAsApplicant}
-      onChange={(e) => setUseAccountDetailsAsApplicant(e.target.checked)}
-      className="rounded border-primary text-primary focus:ring-primary"
-     />
-     <label htmlFor="use-account-details" className="text-sm text-gray-700">
-      Use my account details as applicant
-     </label>
-    </div>
-    <p className="text-xs text-gray-500 mb-2">
-     {useAccountDetailsAsApplicant
-      ? "Fields are filled from your profile. Change your details only in Profile settings."
-      : "Enter applicant details manually (e.g. applying for someone else)."}
-    </p>
+    
 
     {loading ? (
      <div className="flex justify-center items-center h-40">
@@ -1162,25 +1172,25 @@ const Step1 = ({
      </div>
     ) : (
      <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-2 mt-3">
-      <div className="flex flex-col items-center">
+      <div className="flex flex-col items-center p-3">
        <label
         htmlFor={useAccountDetailsAsApplicant ? undefined : "profile"}
-        className={`h-[70px] w-[70px] ${
-         !previewImage && !profileData.has_image
-          ? "border-2 border-red-400"
-          : ""
-        } ${useAccountDetailsAsApplicant ? "cursor-default" : "cursor-pointer"} bg-gray-300 rounded-full flex items-center justify-center overflow-hidden ${useAccountDetailsAsApplicant ? "opacity-90" : ""}`}
-       >
+         className={`h-[70px] w-[70px] ${
+          !previewImage && !profileData?.has_image
+           ? "border-2 border-red-400"
+           : ""
+         } ${useAccountDetailsAsApplicant ? "cursor-default" : "cursor-pointer"} bg-gray-300 rounded-full flex items-center justify-center overflow-hidden ${useAccountDetailsAsApplicant ? "opacity-90" : ""}`}
+        >
         {previewImage ? (
          <img
           src={previewImage}
           alt="Profile Preview"
           className="w-full h-full object-cover rounded-full"
          />
-        ) : profileData.has_image && profileData.image_url ? (
-         <ImageDisplay
-          key={profileData.image_url + Date.now()}
-          imageUrl={profileData.image_url}
+         ) : profileData?.has_image && profileData?.image_url ? (
+          <ImageDisplay
+           key={profileData?.image_url + Date.now()}
+           imageUrl={profileData?.image_url}
           alt="Profile Image"
           className="w-full h-full object-cover rounded-full"
           fallback={
@@ -1195,13 +1205,13 @@ const Step1 = ({
         )}
        </label>
        <p
-        className={`text-xs mt-1 text-center w-full ${
-         !previewImage && !profileData.has_image
-          ? "text-red-500"
-          : "text-gray-500"
-        }`}
+         className={`text-xs mt-1 text-center w-full ${
+          !previewImage && !profileData?.has_image
+           ? "text-red-500"
+           : "text-gray-500"
+         }`}
        >
-        Profile Image (Required)
+        Profile Image 
        </p>
        <input
         type="file"
@@ -1255,7 +1265,7 @@ const Step1 = ({
           onChange={handleInputChange}
           readOnly={useAccountDetailsAsApplicant}
           className={`h-8 rounded-md px-3 text-sm border border-primary ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
-          title={useAccountDetailsAsApplicant ? "Edit in Profile or uncheck 'Use my account details' to apply for someone else." : ""}
+          title={useAccountDetailsAsApplicant ? "Edit in Profile to update this information." : ""}
          />
         </div>
         <div className="flex flex-col gap-1">
@@ -1278,15 +1288,18 @@ const Step1 = ({
         <label htmlFor="address" className="text-xs">
          Address
         </label>
-        <input
-         type="text"
+        <textarea
          name="address"
          id="address"
          value={profileData.address || ""}
          onChange={handleInputChange}
          readOnly={useAccountDetailsAsApplicant}
-         className={`h-8 rounded-md px-3 text-sm border border-primary ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
+         className={`min-h-[72px] rounded-md px-3 py-2 text-sm border border-primary resize-y ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
+         placeholder="House/Unit No., Street, Barangay, City/Municipality, Province"
         />
+        <p className="text-[11px] text-gray-500">
+         Format: House/Unit, Street, Barangay, City/Municipality, Province
+        </p>
        </div>
 
        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
@@ -1295,13 +1308,22 @@ const Step1 = ({
           Date of Birth
          </label>
          <input
-          type="date"
+          type="text"
           name="birth_date"
           id="birth_date"
-          value={profileData.birth_date || ""}
-          onChange={handleInputChange}
+          value={toMMDDYYYYValue(profileData.birth_date || "")}
+          onChange={(e) =>
+           handleInputChange({
+            target: {
+             name: "birth_date",
+             value: autoFormatMMDDYYYYInput(e.target.value, toMMDDYYYYValue(profileData.birth_date || "")),
+            },
+           })
+          }
           readOnly={useAccountDetailsAsApplicant}
           className={`h-8 px-3 text-sm border border-primary rounded-md ${useAccountDetailsAsApplicant ? "bg-gray-100 cursor-not-allowed" : ""}`}
+          placeholder="MM/DD/YYYY"
+          inputMode="numeric"
          />
         </div>
         <div className="flex flex-col gap-1">
@@ -1573,21 +1595,17 @@ const Step2 = ({
       </p>
      )}
      <div className="mt-3 flex flex-col items-center justify-center gap-2">
-      <button
+      <p
+      type="button"
        onClick={handleResendOtp}
        disabled={resendDisabled}
-       className="text-xs font-medium text-primary disabled:text-gray-400"
+       className="text-xs font-medium text-primary disabled:text-gray-400 cursor-pointer hover:text-primary/80"
       >
        {resendDisabled
         ? `Resend code ${countdown > 0 ? `(${countdown}s)` : ""}`
         : "Didn't receive a code? Resend"}
-      </button>
-      <button
-       onClick={onChangeEmail}
-       className="text-xs font-medium text-gray-500"
-      >
-       Change email address
-      </button>
+      </p>
+      
      </div>
     </div>
    </div>
@@ -1610,7 +1628,11 @@ const Step3 = ({
  const [selectedLicense, setSelectedLicense] = useState(null);
  const [licenseImageLoading, setLicenseImageLoading] = useState(false);
  const [fetchError, setFetchError] = useState(false);
+ const [deletingDriverId, setDeletingDriverId] = useState(null);
+ const [showDeleteDriverConfirm, setShowDeleteDriverConfirm] = useState(false);
+ const [driverToDelete, setDriverToDelete] = useState(null);
  const [authorizedDrivers, setAuthorizedDrivers] = useState([]);
+ const [driverTab, setDriverTab] = useState("valid");
 
  // Update parent component when fetchError changes
  useEffect(() => {
@@ -1696,6 +1718,43 @@ const Step3 = ({
   });
  };
 
+ const handleDeleteAuthorizedDriver = async () => {
+  if (!driverToDelete) return;
+  try {
+   setDeletingDriverId(driverToDelete.auth_driver_id);
+   setFetchError(false);
+   const response = await fetch(
+    buildUrl(`/applicant/authorized-driver/${driverToDelete.auth_driver_id}`),
+    {
+     method: "DELETE",
+     headers: {
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+     },
+    }
+   );
+   const data = await response.json().catch(() => ({}));
+   if (!response.ok) {
+    throw new Error(data?.detail || "Failed to delete authorized driver");
+   }
+
+   setSelectedDrivers((prev) =>
+    prev.filter((d) => d.auth_driver_id !== driverToDelete.auth_driver_id)
+   );
+   setAuthorizedDrivers((prev) =>
+    prev.filter((d) => d.auth_driver_id !== driverToDelete.auth_driver_id)
+   );
+   setShowDeleteDriverConfirm(false);
+   setDriverToDelete(null);
+   toast.success("Authorized driver deleted.");
+  } catch (error) {
+   console.error("Error deleting authorized driver:", error);
+   toast.error(error.message || "Failed to delete authorized driver.");
+   setFetchError(true);
+  } finally {
+   setDeletingDriverId(null);
+  }
+ };
+
  const calculateAge = (birthDate) => {
   if (!birthDate) return "N/A";
   const today = new Date();
@@ -1717,6 +1776,10 @@ const Step3 = ({
    day: "numeric",
   });
  };
+
+ const filteredDrivers = authorizedDrivers.filter((driver) =>
+  driverTab === "valid" ? !!driver.is_valid : !driver.is_valid
+ );
 
  const viewDriverLicense = async (driver) => {
   if (!driver.document?.image) return;
@@ -1980,15 +2043,33 @@ const Step3 = ({
       </div>
      </div>
 
-     {/* Tabs for Valid/Expired drivers */}
-     <div className="mt-2 border-b border-gray-200">
-      <div className="flex space-x-4">
-       <button className="py-1 px-3 border-b-2 border-primary text-primary text-xs font-medium">
-        Valid
-       </button>
-       <button className="py-1 px-3 text-gray-500 text-xs">Expired</button>
+      {/* Tabs for Valid/Expired drivers */}
+      <div className="mt-2 border-b border-gray-200">
+       <div className="flex space-x-4">
+        <button
+         type="button"
+         onClick={() => setDriverTab("valid")}
+         className={`py-1 px-3 text-xs font-medium ${
+          driverTab === "valid"
+           ? "border-b-2 border-primary text-primary"
+           : "text-gray-500"
+         }`}
+        >
+         Valid
+        </button>
+        <button
+         type="button"
+         onClick={() => setDriverTab("expired")}
+         className={`py-1 px-3 text-xs font-medium ${
+          driverTab === "expired"
+           ? "border-b-2 border-primary text-primary"
+           : "text-gray-500"
+         }`}
+        >
+         Expired
+        </button>
+       </div>
       </div>
-     </div>
 
      {/* Driver Cards */}
      <div className="mt-2 max-h-[200px] overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -1996,8 +2077,8 @@ const Step3 = ({
        <div className="flex justify-center items-center py-6">
         <div className="animate-spin h-6 w-6 border-3 border-primary border-t-transparent rounded-full"></div>
        </div>
-      ) : authorizedDrivers.length > 0 ? (
-       authorizedDrivers.map((driver) => (
+      ) : filteredDrivers.length > 0 ? (
+       filteredDrivers.map((driver) => (
         <div
          key={driver.auth_driver_id}
          className={`border rounded-lg p-2 mb-2 cursor-pointer ${
@@ -2046,42 +2127,67 @@ const Step3 = ({
           </div>
          </div>
 
-         <div className="mt-1 flex justify-between items-center">
-          <span className="text-[10px] text-gray-500">
-           {driver.relationship_status || "N/A"}
-          </span>
-          {driver.document?.image && (
-           <button
-            onClick={(e) => {
-             e.stopPropagation();
-             viewDriverLicense(driver);
-            }}
-            className="text-[10px] text-primary hover:underline"
-           >
-            View License
-           </button>
-          )}
-         </div>
+          <div className="mt-1 flex justify-between items-center">
+           <span className="text-[10px] text-gray-500">
+            {driver.relationship_status || "N/A"}
+           </span>
+           {driver.document?.image && (
+            <button
+             onClick={(e) => {
+              e.stopPropagation();
+              viewDriverLicense(driver);
+             }}
+             className="text-[10px] text-primary hover:underline"
+            >
+             View License
+            </button>
+           )}
+          </div>
 
-         {driver.document && (
-          <div className="mt-1 text-[10px] text-gray-500">
-           <div className="flex justify-between">
+          {driver.document && (
+           <div className="mt-1 text-[10px] text-gray-500">
+            <div className="flex justify-between">
             <span>Exp: {formatDate(driver.document.expired_at)}</span>
             <span
              className={driver.is_valid ? "text-green-500" : "text-red-500"}
-            >
-             {driver.is_valid ? "Valid" : "Expired"}
-            </span>
+             >
+              {driver.is_valid ? "Valid" : "Expired"}
+             </span>
+            </div>
+            {selectedDrivers.some(
+             (d) => d.auth_driver_id === driver.auth_driver_id
+            ) && (
+             <div className="mt-1 flex justify-start">
+              <button
+               onClick={(e) => {
+                e.stopPropagation();
+                setDriverToDelete(driver);
+                setShowDeleteDriverConfirm(true);
+               }}
+               disabled={deletingDriverId === driver.auth_driver_id}
+               className="text-[10px] text-red-400 hover:text-red-500 hover:underline disabled:text-gray-400 disabled:cursor-not-allowed"
+              >
+               {deletingDriverId === driver.auth_driver_id
+                ? "Deleting..."
+                : "Delete"}
+              </button>
+             </div>
+            )}
            </div>
-          </div>
-         )}
+          )}
         </div>
        ))
       ) : (
-       <div className="text-center py-4 text-gray-500 text-xs">
-        <p>No authorized drivers found.</p>
-        <p className="text-xs mt-1">Click the + button to add a driver.</p>
-       </div>
+        <div className="text-center py-4 text-gray-500 text-xs">
+         <p>
+          {driverTab === "valid"
+           ? "No valid authorized drivers found."
+           : "No expired authorized drivers found."}
+         </p>
+         {driverTab === "valid" && (
+          <p className="text-xs mt-1">Click the + button to add a driver.</p>
+         )}
+        </div>
       )}
      </div>
     </div>
@@ -2140,6 +2246,64 @@ const Step3 = ({
       </div>
      </div>
     )}
+    {showDeleteDriverConfirm && driverToDelete && (
+     <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex justify-center items-center z-50">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-6 relative">
+       <button
+        type="button"
+        onClick={() => {
+         if (deletingDriverId) return;
+         setShowDeleteDriverConfirm(false);
+         setDriverToDelete(null);
+        }}
+        disabled={!!deletingDriverId}
+        className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+       >
+        <IoClose size={20} />
+       </button>
+       <h2 className="text-lg font-semibold text-gray-800 mb-2">
+        Delete authorized driver?
+       </h2>
+       <p className="text-sm text-gray-600 mb-4">
+        This will permanently remove{" "}
+        <span className="font-medium">
+         {`${driverToDelete.first_name || ""} ${driverToDelete.last_name || ""}`.trim() ||
+          `Driver #${driverToDelete.auth_driver_id}`}
+        </span>{" "}
+        and associated details. Do you want to proceed?
+       </p>
+       <div className="flex justify-end gap-2">
+        <button
+         type="button"
+         onClick={() => {
+          setShowDeleteDriverConfirm(false);
+          setDriverToDelete(null);
+         }}
+         disabled={!!deletingDriverId}
+         className={`px-4 py-2 text-sm rounded-md border ${
+          deletingDriverId
+           ? "border-gray-200 text-gray-400 cursor-not-allowed"
+           : "border-gray-300 text-gray-700 hover:bg-gray-50"
+         }`}
+        >
+         Cancel
+        </button>
+        <button
+         type="button"
+         onClick={handleDeleteAuthorizedDriver}
+         disabled={!!deletingDriverId}
+         className={`px-4 py-2 text-sm rounded-md text-white ${
+          deletingDriverId
+           ? "bg-red-300 cursor-not-allowed"
+           : "bg-red-500 hover:bg-red-600"
+         }`}
+        >
+         {deletingDriverId ? "Deleting..." : "Confirm"}
+        </button>
+       </div>
+      </div>
+     </div>
+    )}
 
     {/* Add Driver Modal */}
     {showAddDriverModal && (
@@ -2152,14 +2316,13 @@ const Step3 = ({
         <IoClose size={24} />
        </button>
 
-       <AddDriverForm
-        onSuccess={() => {
-         setShowAddDriverModal(false);
-         fetchAuthorizedDrivers();
-         toast.success("Driver added successfully");
-        }}
-        onCancel={() => setShowAddDriverModal(false)}
-       />
+        <AddDriverForm
+         onSuccess={() => {
+          setShowAddDriverModal(false);
+          fetchAuthorizedDrivers();
+         }}
+         onCancel={() => setShowAddDriverModal(false)}
+        />
       </div>
      </div>
     )}
@@ -2174,12 +2337,17 @@ const DOC_LABELS = { CR: "Certificate of Registration", OR: "Official Receipt", 
 const Step4 = ({
  setDocumentFiles,
  documentFiles,
+ extractedDocDetails,
+ confirmedDocDetails,
+ currentDocIndex,
+ setCurrentDocIndex,
+ reopenDocAt,
+ onReopenHandled,
  setHasApiError,
  setExtractedDocDetails,
  setConfirmedDocDetails,
 }) => {
  const nav = useNavigate();
- const [currentDocIndex, setCurrentDocIndex] = useState(0);
  const [showDocModal, setShowDocModal] = useState(false);
  const [modalFile, setModalFile] = useState(null);
  const [modalDocType, setModalDocType] = useState(null);
@@ -2219,6 +2387,8 @@ const Step4 = ({
  const [showPhAddressModal, setShowPhAddressModal] = useState(false);
  const [isExtractingOne, setIsExtractingOne] = useState(false);
  const [fileError, setFileError] = useState(false);
+ const [modalDrafts, setModalDrafts] = useState({ CR: null, OR: null, DL: null });
+ const [modalSequentialNav, setModalSequentialNav] = useState(false);
  const [showDocFullscreen, setShowDocFullscreen] = useState(false);
  const [fullscreenZoom, setFullscreenZoom] = useState(100);
  const [fullscreenPan, setFullscreenPan] = useState({ x: 0, y: 0 });
@@ -2438,8 +2608,112 @@ const fileInputRef = useRef(null);
   setPhAddress(next);
  }
 
- const currentDocType = DOC_ORDER[currentDocIndex];
- const currentLabel = DOC_LABELS[currentDocType];
+ const buildModalPayloadFromState = useCallback((docType) => {
+  if (docType === "CR") {
+   return {
+    _docType: "CR",
+    file_number: confirmedDocDetails?.cr_file_number || extractedDocDetails?.CR?.file_number || "",
+    date: confirmedDocDetails?.cr_date || extractedDocDetails?.CR?.date || "",
+    owner_name: confirmedDocDetails?.cr_owner_name || extractedDocDetails?.CR?.owner_name || "",
+    owner_address: confirmedDocDetails?.cr_owner_address || extractedDocDetails?.CR?.owner_address || "",
+    plate_number: confirmedDocDetails?.cr_plate_number || extractedDocDetails?.CR?.plate_number || "",
+    make: confirmedDocDetails?.cr_make || extractedDocDetails?.CR?.make || "",
+    year_model: confirmedDocDetails?.cr_year_model || extractedDocDetails?.CR?.year_model || "",
+    body_type: confirmedDocDetails?.cr_body_type || extractedDocDetails?.CR?.body_type || "",
+    piston_displacement:
+     confirmedDocDetails?.cr_piston_displacement ||
+     extractedDocDetails?.CR?.piston_displacement ||
+     "",
+   };
+  }
+  if (docType === "OR") {
+    return {
+     _docType: "OR",
+     file_number: confirmedDocDetails?.or_file_number || extractedDocDetails?.OR?.file_number || "",
+     expiration_date:
+      confirmedDocDetails?.or_expiration || extractedDocDetails?.OR?.expiration_date || "",
+    };
+   }
+   return {
+    _docType: "DL",
+    name: confirmedDocDetails?.dl_name || extractedDocDetails?.DL?.name || "",
+    license_number:
+     confirmedDocDetails?.dl_license_number || extractedDocDetails?.DL?.license_number || "",
+    expiration_date:
+     confirmedDocDetails?.dl_expiration || extractedDocDetails?.DL?.expiration_date || "",
+   };
+  }, [confirmedDocDetails, extractedDocDetails]);
+ 
+  const buildModalFormFromState = useCallback((docType) => {
+   const payload = buildModalPayloadFromState(docType);
+   if (docType === "CR") {
+    return {
+     file_number: String(payload.file_number || "").trim(),
+     expiration_date: "",
+     date: toMMDDYYYYValue(payload.date || ""),
+     owner_name: String(payload.owner_name || "").trim(),
+     owner_address: String(payload.owner_address || "").trim(),
+     plate_number: String(payload.plate_number || "").trim(),
+     plate_number_blank_or_temp: !!confirmedDocDetails?.cr_plate_number_blank_or_temp,
+     make: String(payload.make || "").trim(),
+     year_model: String(payload.year_model || "").trim(),
+     body_type: String(payload.body_type || "").trim(),
+     body_type_other: "",
+     make_other: "",
+     piston_displacement: String(payload.piston_displacement || "").trim(),
+    };
+   }
+   return {
+    file_number: String(payload.file_number || "").trim(),
+    expiration_date: toMMDDYYYYValue(payload.expiration_date || ""),
+    name: docType === "DL" ? String(payload.name || "").trim() : "",
+    license_number:
+     docType === "DL"
+      ? autoFormatLicenseNumberInput(String(payload.license_number || ""))
+      : "",
+    date: "",
+    owner_name: "",
+    owner_address: "",
+    plate_number: "",
+    plate_number_blank_or_temp: false,
+    make: "",
+    year_model: "",
+    body_type: "",
+    body_type_other: "",
+    make_other: "",
+    piston_displacement: "",
+   };
+  }, [buildModalPayloadFromState, confirmedDocDetails?.cr_plate_number_blank_or_temp]);
+ 
+  const openDocModalFromState = useCallback((docType) => {
+   const lower = docType.toLowerCase();
+   const existingFile = documentFiles?.[lower];
+   if (!existingFile) return;
+   const idx = DOC_ORDER.indexOf(docType);
+   if (idx >= 0) setCurrentDocIndex(idx);
+   const draft = modalDrafts?.[docType];
+   const payload = buildModalPayloadFromState(docType);
+   setModalDocType(docType);
+   setModalFile(existingFile);
+   extractedPayloadRef.current = payload;
+   setPendingExtractedData({ ...payload, payload });
+   setModalForm(draft || buildModalFormFromState(docType));
+   setShowDocModal(true);
+  }, [buildModalFormFromState, buildModalPayloadFromState, documentFiles, modalDrafts, setCurrentDocIndex]);
+
+  useEffect(() => {
+   if (reopenDocAt == null) return;
+   const docType = DOC_ORDER[reopenDocAt];
+   if (docType && documentFiles?.[docType.toLowerCase()]) {
+    setModalSequentialNav(true);
+    openDocModalFromState(docType);
+   }
+   onReopenHandled?.();
+  }, [reopenDocAt, documentFiles, openDocModalFromState, onReopenHandled]);
+
+  const safeDocIndex = Math.max(0, Math.min(currentDocIndex, DOC_ORDER.length - 1));
+  const currentDocType = DOC_ORDER[safeDocIndex];
+  const currentLabel = DOC_LABELS[currentDocType];
 
  const handleFileChange = async (e) => {
   const file = e.target.files?.[0];
@@ -2501,7 +2775,8 @@ const fileInputRef = useRef(null);
    if (!hasExtractedData) {
     toast.info("No data was extracted from the document. Please enter the details manually.");
    }
-   setModalFile(file);
+    setModalSequentialNav(false);
+    setModalFile(file);
    setModalDocType(docType);
    extractedPayloadRef.current = payload;
    setPendingExtractedData({ ...payload, payload: payload });
@@ -2548,7 +2823,7 @@ const fileInputRef = useRef(null);
   }
  };
 
- const handleProceed = () => {
+  const handleProceed = () => {
   const doc = modalDocType;
   const lower = doc.toLowerCase();
   const pd = extractedPayloadRef.current || pendingExtractedData?.payload || pendingExtractedData;
@@ -2632,6 +2907,17 @@ const fileInputRef = useRef(null);
      }),
     })});
   setDocumentFiles((prev) => ({ ...prev, [lower]: modalFile }));
+  const nextIndex = DOC_ORDER.indexOf(doc) + 1;
+  const nextDocType = DOC_ORDER[nextIndex];
+  const hasNextUploadedDoc =
+   !!nextDocType && !!documentFiles?.[nextDocType.toLowerCase()];
+  if (hasNextUploadedDoc) {
+   setShowDocFullscreen(false);
+   setShowPhAddressModal(false);
+   setModalDrafts((prev) => ({ ...prev, [doc]: null }));
+   openDocModalFromState(nextDocType);
+   return;
+  }
   setShowDocFullscreen(false);
   setShowDocModal(false);
   setModalFile(null);
@@ -2649,7 +2935,63 @@ const fileInputRef = useRef(null);
    cityCode: "", cityName: "", barangayCode: "", barangayName: "", street: "", loading: false,
   });
   setShowPhAddressModal(false);
-  setCurrentDocIndex((i) => i + 1);
+  setModalDrafts((prev) => ({ ...prev, [doc]: null }));
+  setCurrentDocIndex(Math.min(DOC_ORDER.length, nextIndex));
+  setModalSequentialNav(false);
+ };
+
+ const handleModalBack = () => {
+  const current = DOC_ORDER.indexOf(modalDocType);
+  if (current <= 0) return;
+  const prevDocType = DOC_ORDER[current - 1];
+  if (!documentFiles?.[prevDocType.toLowerCase()]) return;
+  setModalDrafts((prev) => ({
+   ...prev,
+   [modalDocType]: { ...modalForm },
+  }));
+  openDocModalFromState(prevDocType);
+ };
+
+ const isProceedDisabled = () => {
+  const doc = modalDocType;
+  const pd =
+   extractedPayloadRef.current ||
+   pendingExtractedData?.payload ||
+   pendingExtractedData ||
+   {};
+  const valueOf = (key) => {
+   const mv = modalForm?.[key];
+   if (mv !== undefined && mv !== null && String(mv).trim() !== "") {
+    return String(mv).trim();
+   }
+   const pv = pd?.[key];
+   return pv !== undefined && pv !== null ? String(pv).trim() : "";
+  };
+
+  if (doc === "OR") {
+   return !valueOf("file_number") || !valueOf("expiration_date");
+  }
+
+  if (doc === "DL") {
+   return !valueOf("name") || !valueOf("license_number") || !valueOf("expiration_date");
+  }
+
+  if (doc === "CR") {
+   const plateRequired = !modalForm?.plate_number_blank_or_temp;
+   return (
+    !valueOf("owner_name") ||
+    !valueOf("owner_address") ||
+    !valueOf("file_number") ||
+    !valueOf("date") ||
+    !valueOf("year_model") ||
+    !valueOf("body_type") ||
+    !valueOf("make") ||
+    !valueOf("piston_displacement") ||
+    (plateRequired && !valueOf("plate_number"))
+   );
+  }
+
+  return false;
  };
 
  const proceedButtonLabel = () => {
@@ -2659,6 +3001,12 @@ const fileInputRef = useRef(null);
  };
 
  const allDone = currentDocIndex >= DOC_ORDER.length;
+ const hasPreviousModalDoc = (() => {
+  const idx = DOC_ORDER.indexOf(modalDocType);
+  if (idx <= 0) return false;
+  const prev = DOC_ORDER[idx - 1]?.toLowerCase();
+  return !!documentFiles?.[prev];
+ })();
 
  return (
   <>
@@ -2722,16 +3070,17 @@ const fileInputRef = useRef(null);
         Confirm {DOC_LABELS[modalDocType]} details
        </h2>
        <button
-        type="button"
-        onClick={() => {
-         setShowDocFullscreen(false);
-         setShowDocModal(false);
+         type="button"
+         onClick={() => {
+          setShowDocFullscreen(false);
+          setShowDocModal(false);
          setShowPhAddressModal(false);
          setModalFile(null);
-         setModalDocType(null);
-         extractedPayloadRef.current = null;
-         setPendingExtractedData(null);
-        }}
+          setModalDocType(null);
+          extractedPayloadRef.current = null;
+          setPendingExtractedData(null);
+          setModalSequentialNav(false);
+         }}
         className="text-gray-500 hover:text-gray-700 p-1"
         aria-label="Close"
        >
@@ -2871,7 +3220,7 @@ const fileInputRef = useRef(null);
             onChange={(e) =>
              setModalForm((prev) => ({
               ...prev,
-              date: autoFormatMMDDYYYYInput(e.target.value),
+               date: autoFormatMMDDYYYYInput(e.target.value, toMMDDYYYYValue(f("date"))),
              }))
             }
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary/20 focus:border-primary"
@@ -2927,7 +3276,7 @@ const fileInputRef = useRef(null);
             ];
             const motoMakes = [
              "Yamaha", "Honda", "Suzuki", "Kawasaki", "Vespa", "Hatasu", "Husqavarna", "KTM", "Rusi", "Skygo", "MotorStar", "Bajaj", "TVS", "Ecooter",
-             "Bristol", "Ducati", "CFMoto", "Kymco", "SYM", "Keeway", "NWOW", "Triumph", "Other"
+             "Bristol", "Ducati", "CFMoto", "Kymco", "SYM", "Keeway", "NWOW", "Triumph", "Mitsukoshi", "Other"
             ];
             const makes = bodyType === "Motorcycle" ? motoMakes : carMakes;
             return (
@@ -2993,7 +3342,10 @@ const fileInputRef = useRef(null);
             onChange={(e) =>
              setModalForm((prev) => ({
               ...prev,
-              license_number: autoFormatLicenseNumberInput(e.target.value),
+              license_number: autoFormatLicenseNumberInput(
+               e.target.value,
+               f("license_number")
+              ),
              }))
             }
             className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -3023,7 +3375,7 @@ const fileInputRef = useRef(null);
            onChange={(e) =>
             setModalForm((prev) => ({
              ...prev,
-             expiration_date: autoFormatMMDDYYYYInput(e.target.value),
+              expiration_date: autoFormatMMDDYYYYInput(e.target.value, toMMDDYYYYValue(f("expiration_date"))),
             }))
            }
            className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -3034,13 +3386,30 @@ const fileInputRef = useRef(null);
         <button
          type="button"
          onClick={handleProceed}
-         className="mt-2 bg-primary text-white font-medium py-2 px-4 rounded-md hover:opacity-90"
+         disabled={isProceedDisabled()}
+         className={`mt-2 font-medium py-2 px-4 rounded-md ${
+          isProceedDisabled()
+           ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+           : "bg-primary text-white hover:opacity-90"
+         }`}
         >
          {proceedButtonLabel()}
         </button>
-          </>
-         );
-        })()}
+        <button
+         type="button"
+         onClick={handleModalBack}
+         disabled={!hasPreviousModalDoc}
+         className={`mt-2 font-medium py-2 px-4 rounded-md ${
+          hasPreviousModalDoc
+           ? "bg-gray-100 text-gray-800 hover:bg-gray-200"
+           : "bg-gray-300 text-gray-500 cursor-not-allowed"
+         }`}
+        >
+         Back
+        </button>
+           </>
+          );
+         })()}
        </div>
       </div>
      </div>
@@ -3086,7 +3455,6 @@ const fileInputRef = useRef(null);
          ))}
         </select>
        </div>
-       {phAddress.provinces.length > 0 && (
        <div>
         <label className="block text-sm text-gray-600 mb-1">Province</label>
         <select
@@ -3096,14 +3464,16 @@ const fileInputRef = useRef(null);
           handlePhProvinceChange(e.target.value, o?.text ?? "");
          }}
          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         disabled={phAddress.provinces.length === 0}
         >
-         <option value="">Select province</option>
+         <option value="">
+          {phAddress.provinces.length === 0 ? "Select region first" : "Select province"}
+         </option>
          {phAddress.provinces.map((p) => (
           <option key={p.code} value={p.code}>{p.name}</option>
          ))}
         </select>
        </div>
-       )}
        <div>
         <label className="block text-sm text-gray-600 mb-1">City / Municipality</label>
         <select
@@ -3115,7 +3485,9 @@ const fileInputRef = useRef(null);
          className="w-full px-3 py-2 border border-gray-300 rounded-md"
          disabled={phAddress.cities.length === 0}
         >
-         <option value="">Select city/municipality</option>
+         <option value="">
+          {phAddress.cities.length === 0 ? "Select province first" : "Select city/municipality"}
+         </option>
          {phAddress.cities.map((c) => (
           <option key={c.code} value={c.code}>{c.name}{c.zip_code ? ` (${c.zip_code})` : ""}</option>
          ))}
@@ -3132,7 +3504,9 @@ const fileInputRef = useRef(null);
          className="w-full px-3 py-2 border border-gray-300 rounded-md"
          disabled={phAddress.barangays.length === 0}
         >
-         <option value="">Select barangay</option>
+         <option value="">
+          {phAddress.barangays.length === 0 ? "Select city/municipality first" : "Select barangay"}
+         </option>
          {phAddress.barangays.map((b) => (
           <option key={b.code} value={b.code}>{b.name}</option>
          ))}
@@ -3357,7 +3731,7 @@ const Step5ConfirmDetails = ({
         onChange={(e) =>
          setConfirmedDocDetails((prev) => ({
           ...prev,
-          or_expiration: autoFormatMMDDYYYYInput(e.target.value),
+           or_expiration: autoFormatMMDDYYYYInput(e.target.value, confirmedDocDetails.or_expiration ?? ""),
          }))
         }
         className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -3402,7 +3776,10 @@ const Step5ConfirmDetails = ({
         onChange={(e) =>
          setConfirmedDocDetails((prev) => ({
           ...prev,
-          dl_license_number: autoFormatLicenseNumberInput(e.target.value),
+          dl_license_number: autoFormatLicenseNumberInput(
+           e.target.value,
+           confirmedDocDetails.dl_license_number ?? ""
+          ),
          }))
         }
         className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -3422,7 +3799,7 @@ const Step5ConfirmDetails = ({
         onChange={(e) =>
          setConfirmedDocDetails((prev) => ({
           ...prev,
-          dl_expiration: autoFormatMMDDYYYYInput(e.target.value),
+           dl_expiration: autoFormatMMDDYYYYInput(e.target.value, confirmedDocDetails.dl_expiration ?? ""),
          }))
         }
         className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -3458,14 +3835,36 @@ const AddDriverForm = ({ onSuccess, onCancel }) => {
   type: "",
   driver_birth_date: "",
   driver_relationship: "",
+  driver_license_number: "",
   driver_license: null,
   driver_profile: null,
-  driver_license_reg_date: "2025-04-09",
-  driver_license_exp_date: "2033-11-06",
+  driver_license_reg_date: "",
+  driver_license_exp_date: "",
  });
  const [previewImage, setPreviewImage] = useState(null);
  const [isSubmitting, setIsSubmitting] = useState(false);
+ const [isExtractingLicense, setIsExtractingLicense] = useState(false);
  const [validationError, setValidationError] = useState(null);
+
+ const getTodayMMDDYYYY = () => {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${mm}/${dd}/${yyyy}`;
+ };
+
+ const splitExtractedDlName = (fullName) => {
+  const raw = String(fullName ?? "").trim();
+  if (!raw) return { first: "", last: "" };
+  if (raw.includes(",")) {
+   const [last, rest] = raw.split(",", 2);
+   return { first: String(rest ?? "").trim(), last: String(last ?? "").trim() };
+  }
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { first: raw, last: "" };
+  return { first: parts.slice(0, -1).join(" "), last: parts[parts.length - 1] };
+ };
 
  const handleInputChange = (e) => {
   const { name, value } = e.target;
@@ -3499,7 +3898,7 @@ const AddDriverForm = ({ onSuccess, onCancel }) => {
   }
  };
 
- const handleLicenseImageChange = (e) => {
+ const handleLicenseImageChange = async (e) => {
   const file = e.target.files[0];
   if (file) {
    // Check if file is valid
@@ -3509,10 +3908,73 @@ const AddDriverForm = ({ onSuccess, onCancel }) => {
     return;
    }
 
+   // Keep selected file immediately so user sees it, then try OCR autofill.
    setDriverData((prev) => ({
     ...prev,
     driver_license: file,
    }));
+
+   setIsExtractingLicense(true);
+   try {
+    const formData = new FormData();
+    formData.append("doc_type", "DL");
+    formData.append("doc_file", file);
+
+    const res = await fetch(buildUrl("/applicant/application/extract-one"), {
+     method: "POST",
+     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+     body: formData,
+    });
+    let data = await res.json();
+    if (!res.ok) {
+     throw new Error(data?.detail || "Failed to extract driver's license details.");
+    }
+    if (data && typeof data === "object" && data.data != null) {
+     data = data.data;
+    }
+
+    const extractedExpiration = toMMDDYYYYValue(
+     String(data?.expiration_date ?? "").trim()
+    );
+    const extractedBirthDate = toMMDDYYYYValue(
+     String(data?.birth_date ?? "").trim()
+    );
+    const { first: extractedFirstName, last: extractedLastName } =
+     splitExtractedDlName(String(data?.name ?? "").trim());
+
+    setDriverData((prev) => ({
+     ...prev,
+     driver_first_name: extractedFirstName || prev.driver_first_name,
+     driver_last_name: extractedLastName || prev.driver_last_name,
+     driver_birth_date: extractedBirthDate || prev.driver_birth_date,
+     driver_license: file,
+     driver_license_number:
+      autoFormatLicenseNumberInput(String(data?.license_number ?? "").trim()) ||
+      prev.driver_license_number,
+     // Keep this editable and prefill only if empty.
+     driver_license_reg_date:
+      prev.driver_license_reg_date || getTodayMMDDYYYY(),
+     // Prefer OCR expiration if available; preserve existing value otherwise.
+     driver_license_exp_date:
+      extractedExpiration || prev.driver_license_exp_date,
+    }));
+    toast.info(
+     "Fields were filled from your document. Please review and edit any incorrect details before submitting."
+    );
+
+    if (!extractedExpiration) {
+     toast.info(
+      "License uploaded. Expiration date was not extracted, please enter it manually."
+     );
+    }
+   } catch (err) {
+    console.error(err);
+    toast.error(
+     err?.message || "Failed to auto-fill license details. Please enter dates manually."
+    );
+   } finally {
+    setIsExtractingLicense(false);
+   }
   }
  };
 
@@ -3526,6 +3988,8 @@ const AddDriverForm = ({ onSuccess, onCancel }) => {
    "Last Name": driverData.driver_last_name,
    "Date of Birth": driverData.driver_birth_date,
    Relationship: driverData.driver_relationship,
+   "License Number": driverData.driver_license_number,
+   "License Expiration Date": driverData.driver_license_exp_date,
    "Driver's License": driverData.driver_license,
    "Profile Image": driverData.driver_profile,
   };
@@ -3541,14 +4005,48 @@ const AddDriverForm = ({ onSuccess, onCancel }) => {
    return;
   }
 
+  const effectiveRegDate = driverData.driver_license_reg_date || getTodayMMDDYYYY();
+  const birthDateISO = normalizeDateToISO(driverData.driver_birth_date);
+  const regDateISO = normalizeDateToISO(effectiveRegDate);
+  const expDateISO = normalizeDateToISO(driverData.driver_license_exp_date);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDateISO)) {
+   toast.error("Please enter Date of Birth in MM/DD/YYYY format");
+   return;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(regDateISO)) {
+   toast.error("Please enter License Registered Date in MM/DD/YYYY format");
+   return;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expDateISO)) {
+   toast.error("Please enter License Expiration Date in MM/DD/YYYY format");
+   return;
+  }
+
   try {
    setIsSubmitting(true);
 
    const formData = new FormData();
 
    // Add all form fields to formData
-   Object.entries(driverData).forEach(([key, value]) => {
+   const payloadDriverData = {
+    ...driverData,
+    driver_license_reg_date: effectiveRegDate,
+   };
+   Object.entries(payloadDriverData).forEach(([key, value]) => {
     if (value !== null && value !== undefined && value !== "") {
+     if (key === "driver_birth_date") {
+      formData.append(key, birthDateISO);
+      return;
+     }
+     if (key === "driver_license_reg_date") {
+      formData.append(key, regDateISO);
+      return;
+     }
+     if (key === "driver_license_exp_date") {
+      formData.append(key, expDateISO);
+      return;
+     }
      formData.append(key, value);
     }
    });
@@ -3583,48 +4081,67 @@ const AddDriverForm = ({ onSuccess, onCancel }) => {
  };
 
  const relationshipOptions = ["Family", "Friend", "Employee", "Self", "Other"];
- const typeOptions = [
-  "Student",
-  "Drop Off",
-  "Employee Parking",
-  "Concessionaire",
- ];
-
  return (
   <div className="py-2">
    <h2 className="text-xl font-semibold text-center mb-4">Add Driver</h2>
 
    <div className="flex justify-center mb-4">
-    <div className="relative">
-     <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center">
-      {previewImage ? (
-       <img
-        src={previewImage}
+     <div className="relative">
+      <label
+       htmlFor="driver-image"
+       className="w-20 h-20 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center cursor-pointer border-2 border-transparent hover:border-primary/60 transition-colors"
+      >
+       {previewImage ? (
+        <img
+         src={previewImage}
         alt="Driver preview"
         className="w-full h-full object-cover"
        />
-      ) : (
-       <FaUserCircle className="w-16 h-16 text-gray-400" />
-      )}
-     </div>
-     <label
-      htmlFor="driver-image"
-      className="absolute bottom-0 right-0 bg-gray-800 rounded-full p-1 cursor-pointer"
-     >
-      <IoMdCloudUpload size={16} className="text-white" />
-     </label>
-     <input
-      type="file"
-      id="driver-image"
+       ) : (
+        <FaUserCircle className="w-16 h-16 text-gray-400" />
+       )}
+      </label>
+      <div className="absolute bottom-0 right-0 bg-gray-800 rounded-full p-1 pointer-events-none">
+       <IoMdCloudUpload size={16} className="text-white" />
+      </div>
+      <input
+       type="file"
+       id="driver-image"
       accept="image/*"
       onChange={handleProfileImageChange}
       className="hidden"
      />
     </div>
    </div>
-   <div className="grid grid-cols-2 gap-3">
-    <div className="flex flex-col">
-     <label className="text-sm text-gray-600 mb-1">First Name</label>
+    <div className="grid grid-cols-2 gap-3">
+     <div className="flex flex-col col-span-2">
+      <label className="text-sm text-gray-600 mb-1">
+       Upload driver license:
+      </label>
+      <div className="border border-gray-300 rounded-md p-2 text-sm flex justify-between items-center">
+       <span className="text-gray-500 truncate">
+        {driverData.driver_license
+         ? driverData.driver_license.name
+         : "Choose File"}
+       </span>
+       <label
+        htmlFor="license-file"
+        className="bg-gray-100 px-2 py-1 rounded cursor-pointer hover:bg-gray-200 transition-colors"
+       >
+        {isExtractingLicense ? "Extracting..." : "Browse"}
+       </label>
+       <input
+        type="file"
+        id="license-file"
+        accept="image/*"
+        onChange={handleLicenseImageChange}
+        className="hidden"
+       />
+      </div>
+     </div>
+
+     <div className="flex flex-col">
+      <label className="text-sm text-gray-600 mb-1">First Name</label>
      <input
       type="text"
       name="driver_first_name"
@@ -3648,11 +4165,20 @@ const AddDriverForm = ({ onSuccess, onCancel }) => {
     <div className="flex flex-col col-span-2">
      <label className="text-sm text-gray-600 mb-1">Date of birth</label>
      <input
-      type="date"
+      type="text"
       name="driver_birth_date"
-      value={driverData.driver_birth_date}
-      onChange={handleInputChange}
+      value={toMMDDYYYYValue(driverData.driver_birth_date)}
+      onChange={(e) =>
+       handleInputChange({
+        target: {
+         name: "driver_birth_date",
+          value: autoFormatMMDDYYYYInput(e.target.value, toMMDDYYYYValue(driverData.driver_birth_date)),
+        },
+       })
+      }
       className="w-full border border-gray-300 rounded-md p-2 text-sm"
+      placeholder="MM/DD/YYYY"
+      inputMode="numeric"
      />
     </div>
 
@@ -3673,31 +4199,56 @@ const AddDriverForm = ({ onSuccess, onCancel }) => {
      </select>
     </div>
 
-    <div className="flex flex-col col-span-2">
-     <label className="text-sm text-gray-600 mb-1">
-      Upload driver license:
-     </label>
-     <div className="border border-gray-300 rounded-md p-2 text-sm flex justify-between items-center">
-      <span className="text-gray-500 truncate">
-       {driverData.driver_license
-        ? driverData.driver_license.name
-        : "Choose File"}
-      </span>
-      <label
-       htmlFor="license-file"
-       className="bg-gray-100 px-2 py-1 rounded cursor-pointer"
-      >
-       Browse
-      </label>
-      <input
-       type="file"
-       id="license-file"
-       accept="image/*"
-       onChange={handleLicenseImageChange}
-       className="hidden"
-      />
-     </div>
-    </div>
+      {driverData.driver_license && (
+      <>
+       <div className="flex flex-col">
+        <label className="text-sm text-gray-600 mb-1">License Number</label>
+        <input
+         type="text"
+         name="driver_license_number"
+         value={driverData.driver_license_number}
+         onChange={(e) =>
+          handleInputChange({
+           target: {
+            name: "driver_license_number",
+            value: autoFormatLicenseNumberInput(
+             e.target.value,
+             driverData.driver_license_number
+            ),
+           },
+          })
+         }
+         className="border border-gray-300 rounded-md p-2 text-sm"
+         placeholder="e.g. K19-10-004489"
+        />
+       </div>
+
+       <div className="flex flex-col">
+        <label className="text-sm text-gray-600 mb-1">License Expiration Date</label>
+        <input
+         type="text"
+         name="driver_license_exp_date"
+         value={toMMDDYYYYValue(driverData.driver_license_exp_date)}
+         onChange={(e) =>
+          handleInputChange({
+           target: {
+            name: "driver_license_exp_date",
+            value: autoFormatMMDDYYYYInput(
+             e.target.value,
+             toMMDDYYYYValue(driverData.driver_license_exp_date)
+            ),
+           },
+          })
+         }
+         className="border border-gray-300 rounded-md p-2 text-sm"
+         placeholder="MM/DD/YYYY"
+         inputMode="numeric"
+        />
+       </div>
+      </>
+     )}
+
+    
    </div>
 
    {validationError && validationError.errors && (
@@ -3751,10 +4302,13 @@ const AddDriverForm = ({ onSuccess, onCancel }) => {
     </button>
    </div>
 
-   <div className="mt-3 text-center">
-    <button onClick={onCancel} className="text-primary text-sm">
+   <div className="mt-3 text-center cursor-pointer hover:text-primary/80">
+    <p onClick={onCancel}
+    
+    className="text-primary text-sm " 
+    >
      Click here to select driver
-    </button>
+    </p>
    </div>
   </div>
  );

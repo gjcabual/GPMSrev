@@ -15,9 +15,9 @@ export const AuthRoutes = () => {
    <Routes>
     <Route path="/role" element={<Role />} />
     <Route path="/*" element={<Role />} />
+    <Route path="/applicant-login" element={<ApplicantLogin />} />
     <Route path="/admin-login" element={<Login />} />
     <Route path="/staff-login" element={<Login />} />
-    <Route path="/applicant-login" element={<ApplicantLogin />} />
     <Route path="/applicant-signup" element={<ApplicantSignup />} />
     <Route path="/forgot-password" element={<ForgotPassword />} />
     <Route path="/verify-reset-password" element={<VerifyResetPassword />} />

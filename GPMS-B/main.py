@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware  # Add this import
+from fastapi.middleware.cors import CORSMiddleware 
 from app.db.session import engine
 from app.db.models.user import Base as UserBase
 from app.db.models.profile import Base as ProfileBase

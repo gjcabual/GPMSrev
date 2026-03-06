@@ -381,8 +381,8 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
        <div className="flex items-start gap-2">
         <BiInfoCircle size={20} className=" text-gray-500 flex-shrink-0" />
         <p className="text-xs sm:text-sm text-blue-600">
-         Check your email for the slip, pay at the cashier, upload your
-         receipt, then proceed to OCSSS Office.
+         Check your email for the slip, pay at the cashier then upload your
+         receipt.
         </p>
        </div>
       )}
@@ -456,8 +456,7 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
          Get payment slip?
         </h2>
         <p className="text-sm text-gray-600 mb-4">
-         After you get the payment slip, this application can no longer be deleted. The status will change to
-         {" "}“Waiting for approval” and you will be able to upload your receipt.
+         After you get the payment slip, this application can no longer be deleted. Do you want to proceed?
         </p>
         <div className="flex justify-end gap-2">
           <button

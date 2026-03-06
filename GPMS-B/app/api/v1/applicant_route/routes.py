@@ -260,6 +260,9 @@ async def extract_one_document(
             exp = result.get("dates", {}).get("expiration_date")
             if exp:
                 response["expiration_date"] = str(exp)
+            birth = result.get("dates", {}).get("birth_date")
+            if birth:
+                response["birth_date"] = str(birth)
             response["name"] = (str(result.get("name")).strip() if result.get("name") else "")
             response["license_number"] = (
                 str(result.get("license_no")).strip() if result.get("license_no") else ""
@@ -845,6 +848,26 @@ async def assign_drivers_to_application(
             status_code=400, 
             detail="Invalid driver IDs format. Please provide comma-separated numbers"
         )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/authorized-driver/{driver_id}", response_model=dict)
+async def delete_authorized_driver(
+    driver_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """
+    Permanently delete an authorized driver and its details for the current user.
+    """
+    try:
+        view = ApplicantView(db)
+        return await view.delete_authorized_driver(
+            driver_id=driver_id,
+            user_id=current_user.user_id
+        )
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

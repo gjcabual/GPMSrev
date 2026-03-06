@@ -84,8 +84,8 @@ export const ApplicantLogin = () => {
                 />
 
                 {/* Title */}
-                <div>
-                    <p className="text-lg md:text-xl font-semibold text-primary z-50">
+                <div className="z-50">
+                    <p className="text-lg md:text-xl font-semibold text-primary">
                         -- APPLICANT ---
                     </p>
                 </div>
@@ -180,7 +180,7 @@ export const ApplicantLogin = () => {
                         </div>
                     </div>
 
-                    {/* Login and Signup Buttons */}
+                    {/* Login and Signup */}
                     <div className="mt-10 text-center flex flex-col gap-2">
                         <button
                             onClick={handleLogin}
@@ -188,13 +188,15 @@ export const ApplicantLogin = () => {
                         >
                             Login
                         </button>
-                        <button
-                            onClick={() => nav("/applicant-signup")}
-                            className="text-sm font-medium text-gray-500 cursor-pointer"
-                        >
+                        <p className="text-sm font-medium text-gray-500">
                             Don't have an account yet?{" "}
-                            <span className="italic text-primary font-medium">Signup here</span>
-                        </button>
+                            <span
+                                onClick={() => nav("/applicant-signup")}
+                                className="italic text-primary font-medium cursor-pointer hover:text-primary/80"
+                            >
+                                Sign up here
+                            </span>
+                        </p>
                     </div>
                 </div>
             </div>

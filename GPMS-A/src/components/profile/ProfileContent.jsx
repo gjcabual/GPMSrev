@@ -5,6 +5,49 @@ import { ChangePassword } from "./ChangePassword";
 import { buildUrl } from "../../utils/buildUrl";
 import { toast } from "sonner";
 import { SuccessModal } from "../response/ResponseModal";
+import * as psgcApi from "../../utils/psgcApi";
+
+const autoFormatMMDDYYYY = (value, prevValue = "") => {
+ const raw = String(value ?? "");
+ const prev = String(prevValue ?? "");
+ const digits = raw.replace(/\D/g, "").slice(0, 8);
+ if (digits.length < 2) return digits;
+ if (digits.length === 2) {
+  if (prev.endsWith("/") && raw === digits) return digits;
+  return `${digits}/`;
+ }
+ if (digits.length < 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+ const base = `${digits.slice(0, 2)}/${digits.slice(2, 4)}`;
+ if (digits.length === 4) {
+  if (prev.endsWith("/") && raw === base) return base;
+  return `${base}/`;
+ }
+ return `${base}/${digits.slice(4)}`;
+};
+
+const formatDateMMDDYYYY = (value) => {
+ const s = String(value ?? "").trim();
+ if (!s) return "";
+ if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+ const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
+ return s;
+};
+
+const toISODate = (value) => {
+ const s = String(value ?? "").trim();
+ if (!s) return "";
+ if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+ const mmddyyyy = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+ if (!mmddyyyy) return "";
+ return `${mmddyyyy[3]}-${mmddyyyy[1]}-${mmddyyyy[2]}`;
+};
+
+const normalizeAddress = (value) =>
+ String(value ?? "")
+  .replace(/[ \t]+/g, " ")
+  .replace(/\n{3,}/g, "\n\n")
+  .trim();
 
 // Image display component that fetches image from backend
 const ImageDisplay = ({ imageUrl, alt, className, fallback }) => {
@@ -90,6 +133,23 @@ export const ProfileContent = () => {
  const [imageFile, setImageFile] = useState(null);
  const [previewImage, setPreviewImage] = useState(null);
  const [shouldRefreshImage, setShouldRefreshImage] = useState(false);
+ const [showAddressPicker, setShowAddressPicker] = useState(false);
+ const [phAddress, setPhAddress] = useState({
+  regions: [],
+  provinces: [],
+  cities: [],
+  barangays: [],
+  regionCode: "",
+  regionName: "",
+  provinceCode: "",
+  provinceName: "",
+  cityCode: "",
+  cityName: "",
+  barangayCode: "",
+  barangayName: "",
+  street: "",
+  loading: false,
+ });
 
  // Get user's role from URL path
  const path = window.location.pathname;
@@ -120,8 +180,12 @@ export const ProfileContent = () => {
    const data = await res.json();
 
    // Store image URL without adding timestamp (handled in ImageDisplay)
-   setProfile(data);
-   setFormData(data);
+    setProfile(data);
+    setFormData({
+     ...data,
+     birth_date: formatDateMMDDYYYY(data?.birth_date),
+     address: normalizeAddress(data?.address),
+    });
    // Reset preview image when fetching new profile data
    setPreviewImage(null);
 
@@ -136,6 +200,30 @@ export const ProfileContent = () => {
   getProfileInfo();
  }, []);
 
+ useEffect(() => {
+  let cancelled = false;
+  setPhAddress((prev) => ({ ...prev, loading: true }));
+  psgcApi
+   .getRegions()
+   .then((data) => {
+    if (!cancelled) {
+     setPhAddress((prev) => ({
+      ...prev,
+      regions: data || [],
+      loading: false,
+     }));
+    }
+   })
+   .catch(() => {
+    if (!cancelled) {
+     setPhAddress((prev) => ({ ...prev, regions: [], loading: false }));
+    }
+   });
+  return () => {
+   cancelled = true;
+  };
+ }, []);
+
  // Cleanup for preview image object URL
  useEffect(() => {
   // Return cleanup function
@@ -148,7 +236,94 @@ export const ProfileContent = () => {
 
  // Handle input changes
  const handleChange = (e) => {
-  setFormData({ ...formData, [e.target.name]: e.target.value });
+  const { name, value } = e.target;
+  if (name === "birth_date") {
+   setFormData({ ...formData, birth_date: autoFormatMMDDYYYY(value, formData.birth_date || "") });
+   return;
+  }
+  if (name === "address") {
+   setFormData({ ...formData, address: normalizeAddress(value) });
+   return;
+  }
+  setFormData({ ...formData, [name]: value });
+ };
+
+ const buildPhAddressString = (ph) => {
+  const parts = [
+   String(ph.street || "").trim(),
+   String(ph.barangayName || "").trim(),
+   String(ph.cityName || "").trim(),
+   String(ph.provinceName || "").trim(),
+   String(ph.regionName || "").trim(),
+  ].filter(Boolean);
+  return parts.join(", ");
+ };
+
+ const handlePhRegionChange = (code, name) => {
+  setPhAddress((prev) => ({
+   ...prev,
+   regionCode: code,
+   regionName: name || "",
+   provinceCode: "",
+   provinceName: "",
+   cityCode: "",
+   cityName: "",
+   barangayCode: "",
+   barangayName: "",
+   provinces: [],
+   cities: [],
+   barangays: [],
+  }));
+  if (!code) return;
+  psgcApi.getProvinces(code).then((provinces) => {
+   setPhAddress((prev) => ({ ...prev, provinces: provinces || [] }));
+   if ((provinces || []).length === 0) {
+    psgcApi.getCitiesMunicipalitiesByRegion(code).then((cities) => {
+     setPhAddress((prev) => ({ ...prev, cities: cities || [] }));
+    });
+   }
+  });
+ };
+
+ const handlePhProvinceChange = (code, name) => {
+  setPhAddress((prev) => ({
+   ...prev,
+   provinceCode: code,
+   provinceName: name || "",
+   cityCode: "",
+   cityName: "",
+   barangayCode: "",
+   barangayName: "",
+   cities: [],
+   barangays: [],
+  }));
+  if (!code) return;
+  psgcApi.getCitiesMunicipalitiesByProvince(code).then((cities) => {
+   setPhAddress((prev) => ({ ...prev, cities: cities || [] }));
+  });
+ };
+
+ const handlePhCityChange = (code, name) => {
+  setPhAddress((prev) => ({
+   ...prev,
+   cityCode: code,
+   cityName: code ? name || "" : "",
+   barangayCode: "",
+   barangayName: "",
+   barangays: [],
+  }));
+  if (!code) return;
+  psgcApi.getBarangays(code).then((barangays) => {
+   setPhAddress((prev) => ({ ...prev, barangays: barangays || [] }));
+  });
+ };
+
+ const handlePhBarangayChange = (code, name) => {
+  setPhAddress((prev) => ({
+   ...prev,
+   barangayCode: code,
+   barangayName: code ? name || "" : "",
+  }));
  };
 
  // Handle image file selection
@@ -168,11 +343,24 @@ export const ProfileContent = () => {
  const handleUpdate = async () => {
   const form = new FormData();
   for (const key in formData) {
-   if (key !== "image_url" && key !== "has_image") {
-    // Skip these fields
-    form.append(key, formData[key]);
+    if (key !== "image_url" && key !== "has_image") {
+     // Skip these fields
+     if (key === "birth_date") {
+      const isoBirthDate = toISODate(formData[key]);
+      if (!isoBirthDate) {
+       toast.error("Please enter Birth Date in MM/DD/YYYY format");
+       return;
+      }
+      form.append(key, isoBirthDate);
+      continue;
+     }
+     if (key === "address") {
+      form.append(key, normalizeAddress(formData[key]));
+      continue;
+     }
+     form.append(key, formData[key]);
+    }
    }
-  }
 
   // If a new image is selected, append it to form data
   if (imageFile) {
@@ -252,8 +440,8 @@ export const ProfileContent = () => {
           </span>
          </div>
          <div className="text-white">
-          <h1 className="font-medium text-base md:text-lg">{getFullName()}</h1>
-          <p className="text-sm md:text-base">Account: {role}</p>
+          <h1 className="font-semibold text-base md:text-lg">{getFullName()}</h1>
+          <p className="text-sm md:text-sm">Account: {role}</p>
          </div>
         </div>
        </div>
@@ -264,12 +452,12 @@ export const ProfileContent = () => {
       <p className="text-sm font-light text-gray-500">
        Change your personal information in here
       </p>
-      <div className="mt-5 flex flex-col gap-3">
-       <button
-        onClick={() => setIsEditing(true)}
-        className="h-10 px-4 rounded-md text-white bg-primary font-medium text-sm cursor-pointer"
-       >
-        Update Information
+       <div className="mt-5 flex flex-col gap-3">
+        <button
+         onClick={() => setIsEditing(true)}
+         className="h-10 px-4 rounded-md text-white bg-primary font-medium text-sm cursor-pointer"
+        >
+         Update Information
        </button>
        {isEditing && (
         <EditingProfile
@@ -280,22 +468,39 @@ export const ProfileContent = () => {
          previewImage={previewImage}
          profileImage={profile?.image_url}
          close={() => {
-          setIsEditing(false);
-          setPreviewImage(null);
-          setImageFile(null);
-         }}
-        />
-       )}
-       <button
-        onClick={() => setChangePassword(true)}
-        className="text-sm font-medium cursor-pointer"
-       >
-        Change Password
-       </button>
-       {changePassword && (
-        <ChangePassword close={() => setChangePassword(false)} />
-       )}
-      </div>
+           setIsEditing(false);
+           setPreviewImage(null);
+           setImageFile(null);
+           setShowAddressPicker(false);
+          }}
+          showAddressPicker={showAddressPicker}
+          setShowAddressPicker={setShowAddressPicker}
+          phAddress={phAddress}
+          setPhAddress={setPhAddress}
+          handlePhRegionChange={handlePhRegionChange}
+          handlePhProvinceChange={handlePhProvinceChange}
+          handlePhCityChange={handlePhCityChange}
+          handlePhBarangayChange={handlePhBarangayChange}
+          applyPSGCAddress={() =>
+           setFormData((prev) => ({
+            ...prev,
+            address: normalizeAddress(buildPhAddressString(phAddress)),
+           }))
+          }
+         />
+        )}
+        <p className="text-sm text-gray-600 text-center">
+         <span
+          onClick={() => setChangePassword(true)}
+          className="font-medium text-primary cursor-pointer hover:text-primary/80 "
+         >
+          Change Password
+         </span>
+        </p>
+        {changePassword && (
+         <ChangePassword close={() => setChangePassword(false)} />
+        )}
+       </div>
      </div>
     </div>
 
@@ -348,24 +553,28 @@ export const ProfileContent = () => {
        <div className="flex flex-col">
         <label>Birth Date</label>
         <input
-         type="date"
+         type="text"
          name="birth_date"
          className="h-10 px-4 rounded-md border"
          value={formData.birth_date || ""}
          onChange={handleChange}
          readOnly={!isEditing}
+         placeholder="MM/DD/YYYY"
+         inputMode="numeric"
         />
        </div>
        <div className="flex flex-col">
         <label>Address</label>
-        <input
-         type="text"
+        <textarea
          name="address"
-         className="h-10 px-4 rounded-md border"
+         className="min-h-[72px] px-4 py-2 rounded-md border resize-y"
          value={formData.address || ""}
          onChange={handleChange}
          readOnly={!isEditing}
         />
+        <p className="text-[11px] text-gray-500 mt-1">
+         Format: House/Unit, Street, Barangay, City/Municipality, Province
+        </p>
        </div>
        <div className="flex flex-col">
         <label>Contact Number</label>
@@ -400,6 +609,15 @@ const EditingProfile = ({
  previewImage,
  profileImage,
  close,
+ showAddressPicker,
+ setShowAddressPicker,
+ phAddress,
+ setPhAddress,
+ handlePhRegionChange,
+ handlePhProvinceChange,
+ handlePhCityChange,
+ handlePhBarangayChange,
+ applyPSGCAddress,
 }) => {
  // Use a stable key for the profile image
  const imageKey = useMemo(
@@ -408,7 +626,8 @@ const EditingProfile = ({
  );
 
  return (
-  <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+  <>
+   <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex justify-center items-center z-50 p-4">
    <div className="bg-white w-full max-w-[450px] rounded-lg shadow-xl p-3 md:p-5 relative">
     <div className="flex items-center justify-between mb-3">
      <h1 className="text-base font-semibold text-primary">
@@ -518,11 +737,13 @@ const EditingProfile = ({
       <div className="flex flex-col gap-1">
        <label className="text-xs font-medium">Birth Date</label>
        <input
-        type="date"
+        type="text"
         name="birth_date"
         className="h-9 px-3 rounded-md border text-sm"
         value={formData.birth_date || ""}
         onChange={handleChange}
+        placeholder="MM/DD/YYYY"
+        inputMode="numeric"
        />
       </div>
      </div>
@@ -532,10 +753,13 @@ const EditingProfile = ({
       <input
        type="text"
        name="address"
-       className="h-9 px-3 rounded-md border text-sm"
+       className="h-9 px-3 rounded-md border text-sm bg-white cursor-pointer"
        value={formData["address"] || ""}
-       onChange={handleChange}
+       onClick={() => setShowAddressPicker(true)}
+       readOnly
+       placeholder="Click to select address"
       />
+      
      </div>
 
      <div className="flex flex-col gap-1">
@@ -564,6 +788,124 @@ const EditingProfile = ({
      </button>
     </div>
    </div>
-  </div>
+   </div>
+   {showAddressPicker && (
+    <div
+     className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+     onClick={(e) => e.target === e.currentTarget && setShowAddressPicker(false)}
+    >
+     <div className="bg-white rounded-lg w-full max-w-lg shadow-xl overflow-hidden">
+      <div className="p-4 border-b flex justify-between items-center">
+       <h3 className="text-lg font-bold text-primary">Quick address</h3>
+       <button
+        type="button"
+        onClick={() => setShowAddressPicker(false)}
+        className="text-gray-500 hover:text-gray-700 p-1"
+       >
+        <IoCloseCircle size={22} />
+       </button>
+      </div>
+      <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+       <p className="text-sm text-gray-600">Select location, then click OK to confirm.</p>
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">Region</label>
+        <select
+         value={phAddress.regionCode}
+         onChange={(e) => {
+          const opt = e.target.options[e.target.selectedIndex];
+          handlePhRegionChange(e.target.value, opt?.text || "");
+         }}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         disabled={phAddress.loading}
+        >
+         <option value="">Select region</option>
+         {phAddress.regions.map((r) => (
+          <option key={r.code} value={r.code}>{r.name}</option>
+         ))}
+        </select>
+       </div>
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">Province</label>
+        <select
+         value={phAddress.provinceCode}
+         onChange={(e) => {
+          const opt = e.target.options[e.target.selectedIndex];
+          handlePhProvinceChange(e.target.value, opt?.text || "");
+         }}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         disabled={phAddress.provinces.length === 0}
+        >
+         <option value="">
+          {phAddress.provinces.length === 0 ? "Select region first" : "Select province"}
+         </option>
+         {phAddress.provinces.map((p) => (
+          <option key={p.code} value={p.code}>{p.name}</option>
+         ))}
+        </select>
+       </div>
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">City / Municipality</label>
+        <select
+         value={phAddress.cityCode}
+         onChange={(e) => {
+          const opt = e.target.options[e.target.selectedIndex];
+          handlePhCityChange(e.target.value, opt?.text || "");
+         }}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         disabled={phAddress.cities.length === 0}
+        >
+         <option value="">
+          {phAddress.cities.length === 0 ? "Select province first" : "Select city/municipality"}
+         </option>
+         {phAddress.cities.map((c) => (
+          <option key={c.code} value={c.code}>{c.name}</option>
+         ))}
+        </select>
+       </div>
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">Barangay</label>
+        <select
+         value={phAddress.barangayCode}
+         onChange={(e) => {
+          const opt = e.target.options[e.target.selectedIndex];
+          handlePhBarangayChange(e.target.value, opt?.text || "");
+         }}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+         disabled={phAddress.barangays.length === 0}
+        >
+         <option value="">
+          {phAddress.barangays.length === 0 ? "Select city/municipality first" : "Select barangay"}
+         </option>
+         {phAddress.barangays.map((b) => (
+          <option key={b.code} value={b.code}>{b.name}</option>
+         ))}
+        </select>
+       </div>
+       <div>
+        <label className="block text-sm text-gray-600 mb-1">Street / Sitio / Building (optional)</label>
+        <input
+         type="text"
+         value={phAddress.street}
+         onChange={(e) => setPhAddress((prev) => ({ ...prev, street: e.target.value }))}
+         className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        />
+       </div>
+      </div>
+      <div className="p-4 border-t flex justify-end">
+       <button
+        type="button"
+        onClick={() => {
+         applyPSGCAddress();
+         setShowAddressPicker(false);
+        }}
+        className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:opacity-90"
+       >
+        OK
+       </button>
+      </div>
+     </div>
+    </div>
+   )}
+  </>
  );
 };

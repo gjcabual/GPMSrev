@@ -11,9 +11,7 @@ from app.db.models.sticker import Sticker
 from app.db.models.vehicle import Vehicle
 from app.db.models.profile import Profile
 from app.db.models.user import User
-from app.utils.image import get_vehicle_image_url  # Add this import
-
-
+from app.utils.image import get_vehicle_image_url
 class ApplicantLogController:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -46,7 +44,15 @@ class ApplicantLogController:
         await self.verify_applicant_exists(applicant_id)
         
         try:
-            # Create base query for approved/rejected applications
+            latest_status_date_subquery = (
+                select(
+                    ApplicationStatus.application_id.label("application_id"),
+                    func.max(ApplicationStatus.date).label("latest_status_date")
+                )
+                .group_by(ApplicationStatus.application_id)
+                .subquery()
+            )
+
             query = (
                 select(
                     Application.application_id,
@@ -58,32 +64,25 @@ class ApplicantLogController:
                     Vehicle.model,
                     Vehicle.plate_no,
                     ApplicationStatus.status,
-                    ApplicationStatus.date.label("status_date")
+                    ApplicationStatus.date.label("processed_date"),
+                    Vehicle.front_image, 
+                    Vehicle.back_image
                 )
                 .join(Vehicle, Application.plate_no == Vehicle.plate_no)
                 .outerjoin(Sticker, Application.sticker_id == Sticker.id)
-                .join(ApplicationStatus, Application.application_id == ApplicationStatus.application_id)
+                .join(
+                    latest_status_date_subquery,
+                    Application.application_id == latest_status_date_subquery.c.application_id
+                )
+                .join(
+                    ApplicationStatus,
+                    and_(
+                        Application.application_id == ApplicationStatus.application_id,
+                        ApplicationStatus.date == latest_status_date_subquery.c.latest_status_date
+                    )
+                )
                 .where(Application.user_id == applicant_id)
                 .where(ApplicationStatus.status.in_(["Approved", "Rejected"]))
-            )
-            
-            # Latest status subquery - to get only the most recent status for each application
-            latest_status_subquery = (
-                select(
-                    ApplicationStatus.application_id,
-                    func.max(ApplicationStatus.date).label("max_date")
-                )
-                .group_by(ApplicationStatus.application_id)
-                .subquery()
-            )
-            
-            # Join with the latest status subquery
-            query = query.join(
-                latest_status_subquery,
-                and_(
-                    ApplicationStatus.application_id == latest_status_subquery.c.application_id,
-                    ApplicationStatus.date == latest_status_subquery.c.max_date
-                )
             )
             
             # Apply optional filters
@@ -110,15 +109,14 @@ class ApplicantLogController:
             # Format the results to match the specified structure
             formatted_applications = []
             for app in applications:
-                # Generate vehicle image URLs
-                front_image_url = await get_vehicle_image_url(app.plate_no, "front", self.db)
-                back_image_url = await get_vehicle_image_url(app.plate_no, "back", self.db)
+                # Handle vehicle image URLs safely
+                front_image_url = await get_vehicle_image_url(
+                    self.db, app.plate_no, "front"
+                ) if app.front_image else None
                 
-                # Remove the /api/v1 prefix from URLs
-                if front_image_url and front_image_url.startswith('/api/v1'):
-                    front_image_url = front_image_url.replace('/api/v1', '', 1)
-                if back_image_url and back_image_url.startswith('/api/v1'):
-                    back_image_url = back_image_url.replace('/api/v1', '', 1)
+                back_image_url = await get_vehicle_image_url(
+                    self.db, app.plate_no, "back"
+                ) if app.back_image else None
                 
                 formatted_applications.append({
                     "application_id": app.application_id,
@@ -130,7 +128,7 @@ class ApplicantLogController:
                     "plate_number": app.plate_no,
                     "date": app.application_date.strftime("%Y-%m-%d") if app.application_date else None,
                     "status": app.status,
-                    "processed_date": app.status_date.strftime("%Y-%m-%d") if app.status_date else None,
+                    "processed_date": app.processed_date.strftime("%Y-%m-%d") if app.processed_date else None,
                     "vehicle_images": {
                         "front": front_image_url,
                         "back": back_image_url

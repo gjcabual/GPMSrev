@@ -239,6 +239,18 @@ class ApplicantView:
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+    async def delete_authorized_driver(self, driver_id: int, user_id: UUID):
+        """
+        Permanently delete an authorized driver profile/details
+        """
+        try:
+            return await self.controller.delete_authorized_driver(
+                driver_id=driver_id,
+                user_id=user_id
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     # Update this method
     async def submit_specific_applications_to_pending(
         self, 

@@ -10,7 +10,7 @@ export const Landing = () => {
     <img src="/main_logo.png" alt="" className="w-32 md:w-48" />
     <button
      onClick={() => nav("/applicant-login")}
-     className="text-sm md:text-base cursor-pointer text-gray-600 hover:text-primary"
+     className="p-2 rounded-md text-sm md:text-base cursor-pointer text-gray-600 hover:text-primary "
     >
      Login
     </button>

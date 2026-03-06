@@ -97,7 +97,11 @@ export const Management = () => {
     });
    }
 
-   return {
+    const resolvedStatus =
+     app.status ||
+     (app.is_rejected ? "Rejected" : "Pending");
+
+    return {
     application_id: app.application_id,
     brand: app.brand,
     building_name: app.building_name || "Main Building",
@@ -107,7 +111,7 @@ export const Management = () => {
     vehicle_type: app.vehicle_type,
     processed_date: app.date_submitted,
     role: app.applicant_name ? "Applicant" : "Student",
-    status: app.status || (app.is_rejected ? "Rejected" : "Approved"),
+     status: resolvedStatus,
     sticker_number: app.sticker_number || "Not Assigned",
     // Store images in both formats to ensure compatibility
     vehicle_images: {
