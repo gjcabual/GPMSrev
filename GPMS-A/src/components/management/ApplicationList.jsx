@@ -186,14 +186,20 @@ export const ApplicationList = ({
 
  // Determine date label based on context
  const dateLabel = isManagement ? "Approved At" : "Applied At";
+ const gridColsClass = isManagement ? "grid-cols-7" : "grid-cols-6";
 
  return (
   <>
    {/* Header Row - now properly aligned with data rows */}
-   <div className="grid grid-cols-6 gap-1 border-b border-gray-300 pb-2 items-center px-2">
+   <div className={`grid ${gridColsClass} gap-1 border-b border-gray-300 pb-2 items-center px-2`}>
     <h1 className="text-lg font-medium text-primary text-left truncate pl-2">
      Plate #
     </h1>
+    {isManagement && (
+     <h1 className="text-lg font-medium text-primary text-left truncate">
+      Sticker
+     </h1>
+    )}
     <h1 className="text-lg font-medium text-primary text-left truncate">
      Applicant
     </h1>
@@ -206,7 +212,7 @@ export const ApplicationList = ({
     <h1 className="text-lg font-medium text-primary text-left truncate">
      {dateLabel}
     </h1>
-    <h1 className="text-lg font-medium text-primary text-right truncate pr-10">
+     <h1 className="text-lg font-medium text-primary text-right truncate pr-10">
      Actions
     </h1>
    </div>
@@ -220,11 +226,14 @@ export const ApplicationList = ({
      return (
       <div
        key={`${applicationId}-${index}`}
-       className={`grid grid-cols-6 gap-1 px-2 h-[60px] rounded-md items-center border border-gray-200 transition duration-200 cursor-pointer 
+       className={`grid ${gridColsClass} gap-1 px-2 h-[60px] rounded-md items-center border border-gray-200 transition duration-200 cursor-pointer 
                       ${isSelected ? "bg-gray-300" : "hover:bg-gray-200"}`}
        onClick={() => handleSelect(item)}
       >
        <div className="text-left truncate pl-2">{getPlateNumber(item)}</div>
+       {isManagement && (
+        <div className="text-left truncate">{getStickerID(item)}</div>
+       )}
        <div className="text-left truncate">{getApplicantName(item)}</div>
        <div className="text-left truncate">{getModel(item)}</div>
        <div className="text-left truncate">{getVehicleType(item)}</div>
