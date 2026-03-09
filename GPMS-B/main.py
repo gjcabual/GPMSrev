@@ -13,6 +13,7 @@ from app.db.models.document import Base as DocumentBase
 from app.db.models.sticker import Base as StickerBase
 from app.db.models.batch_sticker_sessions import Base as BatchStickerSessionsBase
 from app.db.models.assigned_driver import Base as AssignedDriverBase
+from app.db.models.email_change import Base as EmailChangeBase
 
 from app.core.security import get_current_user, get_current_applicant, get_current_staff, get_current_admin
 from app.schemas.user import UserInDB
@@ -55,6 +56,7 @@ async def init_db():
         await conn.run_sync(StickerBase.metadata.create_all)
         await conn.run_sync(BatchStickerSessionsBase.metadata.create_all)
         await conn.run_sync(AssignedDriverBase.metadata.create_all)
+        await conn.run_sync(EmailChangeBase.metadata.create_all)
 
 @app.on_event("startup")
 async def startup_event():

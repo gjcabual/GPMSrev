@@ -2,6 +2,7 @@ import { CiEdit } from "react-icons/ci";
 import { IoCloseCircle } from "react-icons/io5";
 import { useEffect, useState, useMemo } from "react";
 import { ChangePassword } from "./ChangePassword";
+import { ChangeEmail } from "./ChangeEmail";
 import { buildUrl } from "../../utils/buildUrl";
 import { toast } from "sonner";
 import { SuccessModal } from "../response/ResponseModal";
@@ -127,6 +128,7 @@ const ImageDisplay = ({ imageUrl, alt, className, fallback }) => {
 export const ProfileContent = () => {
  const [success, setSuccess] = useState(false);
  const [changePassword, setChangePassword] = useState(false);
+ const [changeEmail, setChangeEmail] = useState(false);
  const [profile, setProfile] = useState(null);
  const [isEditing, setIsEditing] = useState(false);
  const [formData, setFormData] = useState({});
@@ -494,14 +496,28 @@ export const ProfileContent = () => {
           onClick={() => setChangePassword(true)}
           className="font-medium text-primary cursor-pointer hover:text-primary/80 "
          >
-          Change Password
-         </span>
-        </p>
-        {changePassword && (
-         <ChangePassword close={() => setChangePassword(false)} />
-        )}
-       </div>
-     </div>
+           Change Password
+          </span>
+         </p>
+         <p className="text-sm text-gray-600 text-center">
+          <span
+           onClick={() => setChangeEmail(true)}
+           className="font-medium text-primary cursor-pointer hover:text-primary/80"
+          >
+           Change Email
+          </span>
+         </p>
+         {changePassword && (
+          <ChangePassword close={() => setChangePassword(false)} />
+         )}
+         {changeEmail && (
+          <ChangeEmail
+           close={() => setChangeEmail(false)}
+           currentEmail={formData.email || profile?.email || ""}
+          />
+         )}
+        </div>
+      </div>
     </div>
 
     <div className="rounded-md border border-gray-100 shadow-md bg-white w-full h-auto mt-5 md:mt-0">
@@ -576,9 +592,19 @@ export const ProfileContent = () => {
          Format: House/Unit, Street, Barangay, City/Municipality, Province
         </p>
        </div>
-       <div className="flex flex-col">
-        <label>Contact Number</label>
-        <input
+        <div className="flex flex-col">
+         <label>Email</label>
+         <input
+          type="email"
+          name="email"
+          className="h-10 px-4 rounded-md border bg-gray-100 text-gray-700"
+          value={formData.email || ""}
+          readOnly
+         />
+        </div>
+        <div className="flex flex-col">
+         <label>Contact Number</label>
+         <input
          type="text"
          name="contact_no"
          className="h-10 px-4 rounded-md border"

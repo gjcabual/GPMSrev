@@ -18,8 +18,12 @@ export const Login = () => {
  const [email, setEmail] = useState("");
  const [password, setPassword] = useState("");
  const [showPassword, setShowPassword] = useState(false);
+ const [isLoading, setIsLoading] = useState(false);
 
  const handleLogin = async () => {
+  if (isLoading) return;
+  setIsLoading(true);
+  let keepLoading = false;
   try {
    const formData = new FormData();
    formData.append("username", email);
@@ -30,6 +34,7 @@ export const Login = () => {
    });
    const data = await res.json();
    if (res.ok) {
+    keepLoading = true;
     localStorage.setItem("token", data.access_token);
     localStorage.setItem("full_name", data.full_name);
     localStorage.setItem("token_type", data.token_type);
@@ -42,11 +47,15 @@ export const Login = () => {
    }
   } catch (error) {
    toast.error("An error occurred");
+  } finally {
+   if (!keepLoading) {
+    setIsLoading(false);
+   }
   }
  };
 
  const handleKeyPress = (e) => {
-  if (e.key === "Enter") {
+  if (e.key === "Enter" && !isLoading) {
    handleLogin();
   }
  };
@@ -150,9 +159,17 @@ export const Login = () => {
      <div className="mt-8 md:mt-10 text-center flex flex-col gap-2">
       <button
        onClick={() => handleLogin()}
-       className="w-full text-base md:text-lg text-white bg-primary h-10 rounded-md cursor-pointer hover:opacity-90 transition-opacity"
+       disabled={isLoading}
+       className={`w-full text-base md:text-lg text-white bg-primary h-10 rounded-md transition-opacity flex items-center justify-center gap-2 ${
+        isLoading
+         ? "opacity-80 cursor-not-allowed"
+         : "cursor-pointer hover:opacity-90"
+       }`}
       >
-       Login
+       {isLoading && (
+        <span className="inline-block h-4 w-4 rounded-full border-2 border-white/70 border-t-white animate-spin" />
+       )}
+       {isLoading ? "Logging in..." : "Login"}
       </button>
       {(role === "admin" || role === "staff") && (
        <p className="text-sm font-medium font-light text-gray-500">

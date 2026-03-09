@@ -10,6 +10,7 @@ export const ApplicantLogin = () => {
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
 
     // Add this useEffect to check for saved credentials on component mount
     useEffect(() => {
@@ -24,6 +25,10 @@ export const ApplicantLogin = () => {
     }, []);
 
     const handleLogin = async () => {
+        if (isLoading) return;
+        setIsLoading(true);
+        let keepLoading = false;
+
         const formData = new FormData();
         formData.append("username", email);
         formData.append("password", password);
@@ -34,6 +39,7 @@ export const ApplicantLogin = () => {
             });
             const data = await res.json();
             if (res.ok) {
+                keepLoading = true;
                 // Save credentials if remember me is checked
                 if (rememberMe) {
                     localStorage.setItem(
@@ -55,12 +61,16 @@ export const ApplicantLogin = () => {
             }
         } catch (err) {
             toast.error("An error occurred");
+        } finally {
+            if (!keepLoading) {
+                setIsLoading(false);
+            }
         }
     };
 
     // Add this new function to handle key press
     const handleKeyPress = (e) => {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && !isLoading) {
             handleLogin();
         }
     };
@@ -184,9 +194,15 @@ export const ApplicantLogin = () => {
                     <div className="mt-10 text-center flex flex-col gap-2">
                         <button
                             onClick={handleLogin}
-                            className="w-full text-lg text-white bg-primary h-10 rounded-md cursor-pointer"
+                            disabled={isLoading}
+                            className={`w-full text-lg text-white bg-primary h-10 rounded-md flex items-center justify-center gap-2 ${
+                                isLoading ? "opacity-80 cursor-not-allowed" : "cursor-pointer"
+                            }`}
                         >
-                            Login
+                            {isLoading && (
+                                <span className="inline-block h-4 w-4 rounded-full border-2 border-white/70 border-t-white animate-spin" />
+                            )}
+                            {isLoading ? "Logging in..." : "Login"}
                         </button>
                         <p className="text-sm font-medium text-gray-500">
                             Don't have an account yet?{" "}

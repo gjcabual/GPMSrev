@@ -1,7 +1,7 @@
 import { adminData, staffData, applicantData } from "../data/data";
 import { IoLogOut, IoMenu, IoClose } from "react-icons/io5";
 import { useLocation, Link, useNavigate } from "react-router-dom";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { buildUrl } from "../utils/buildUrl";
 import { BiChevronRight } from "react-icons/bi";
@@ -11,6 +11,7 @@ export const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
  const path = location.pathname;
 
  const nav = useNavigate();
+ const [isLoggingOut, setIsLoggingOut] = useState(false);
 
  const segments = useMemo(() => path.split("/").filter(Boolean), [path]);
  const role =
@@ -30,6 +31,9 @@ export const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
  }, [role]);
 
  const handleLogout = async () => {
+  if (isLoggingOut) return;
+  setIsLoggingOut(true);
+  let keepLoading = false;
   try {
    const res = await fetch(buildUrl(`/logout`), {
     method: "POST",
@@ -42,6 +46,7 @@ export const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
    if (res.status === 401) {
     toast.error(data.detail || "Unauthorized");
    } else if (res.ok) {
+    keepLoading = true;
     toast.success("Logout successful");
     localStorage.clear();
     setTimeout(() => {
@@ -50,6 +55,10 @@ export const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
    }
   } catch (err) {
    toast.error("An error occurred");
+  } finally {
+   if (!keepLoading) {
+    setIsLoggingOut(false);
+   }
   }
  };
 
@@ -104,10 +113,17 @@ export const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
     <div className="w-full mt-auto">
      <button
       onClick={handleLogout}
-      className="w-full bg-primary text-white rounded-md h-10 flex items-center justify-center gap-2 cursor-pointer"
+      disabled={isLoggingOut}
+      className={`w-full bg-primary text-white rounded-md h-10 flex items-center justify-center gap-2 ${
+       isLoggingOut ? "opacity-80 cursor-not-allowed" : "cursor-pointer"
+      }`}
      >
-      <IoLogOut size={20} />
-      Logout
+      {isLoggingOut ? (
+       <span className="inline-block h-4 w-4 rounded-full border-2 border-white/70 border-t-white animate-spin" />
+      ) : (
+       <IoLogOut size={20} />
+      )}
+      {isLoggingOut ? "Logging out..." : "Logout"}
      </button>
     </div>
    </div>
