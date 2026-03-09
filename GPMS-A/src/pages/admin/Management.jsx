@@ -499,13 +499,13 @@ export const Management = () => {
      ""
     )}
      {viewMode === "management" ? (
-      <div className="hidden sticky top-0 z-40 bg-gray-50/95 backdrop-blur-sm border border-gray-200 rounded-md px-2 py-2 flex gap-2">
+      <div className="hidden sticky top-0 z-40  backdrop-blur-sm rounded-md px-2 py-2 flex gap-2">
       {/* Search Input */}
       <div className="relative w-full max-w-sm">
        <input
         type="text"
         placeholder="Search sticker number..."
-        className="h-10 w-full bg-gray-200 rounded-md outline-none px-10"
+        className="h-10 w-full rounded-md outline-none px-10"
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
        />
@@ -568,7 +568,7 @@ export const Management = () => {
          }}
          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
         >
-         PDF (current)
+         PDF
         </button>
         <button
          type="button"
@@ -687,7 +687,7 @@ export const Management = () => {
           }}
           className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
          >
-          PDF (current)
+          PDF
          </button>
          <button
           type="button"

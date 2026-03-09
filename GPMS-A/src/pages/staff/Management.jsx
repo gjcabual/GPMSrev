@@ -570,7 +570,7 @@ export const Management = () => {
          }}
          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
         >
-         PDF (current)
+         PDF
         </button>
         <button
          type="button"
@@ -689,7 +689,7 @@ export const Management = () => {
           }}
           className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
          >
-          PDF (current)
+          PDF
          </button>
          <button
           type="button"

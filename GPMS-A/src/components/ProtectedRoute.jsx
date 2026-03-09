@@ -29,11 +29,15 @@ export const ProtectedRoute = ({ children, allowedRole }) => {
         if (res.ok) {
           setIsAuthorized(true);
         } else {
-          toast.error("You are not authorized to access this page");
+          toast.error("You are not authorized to access this page", {
+            id: "auth-unauthorized",
+          });
         }
       } catch (err) {
         console.error(err);
-        toast.error("An error occurred while checking authorization");
+        toast.error("An error occurred while checking authorization", {
+          id: "auth-check-error",
+        });
       } finally {
         setIsLoading(false);
       }

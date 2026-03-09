@@ -8,21 +8,85 @@ import {
  ResetPassword,
  VerifyResetPassword,
 } from "../pages/auth/ResetPassword";
+import { AuthRouteGuard } from "../components/AuthRouteGuard";
 
 export const AuthRoutes = () => {
  return (
   <>
-   <Routes>
-    <Route path="/role" element={<Role />} />
-    <Route path="/*" element={<Role />} />
-    <Route path="/applicant-login" element={<ApplicantLogin />} />
-    <Route path="/admin-login" element={<Login />} />
-    <Route path="/staff-login" element={<Login />} />
-    <Route path="/applicant-signup" element={<ApplicantSignup />} />
-    <Route path="/forgot-password" element={<ForgotPassword />} />
-    <Route path="/verify-reset-password" element={<VerifyResetPassword />} />
-    <Route path="/reset-password" element={<ResetPassword />} />
-   </Routes>
+    <Routes>
+     <Route
+      path="/role"
+      element={
+       <AuthRouteGuard>
+        <Role />
+       </AuthRouteGuard>
+      }
+     />
+     <Route
+      path="/*"
+      element={
+       <AuthRouteGuard>
+        <Role />
+       </AuthRouteGuard>
+      }
+     />
+     <Route
+      path="/applicant-login"
+      element={
+       <AuthRouteGuard>
+        <ApplicantLogin />
+       </AuthRouteGuard>
+      }
+     />
+     <Route
+      path="/admin-login"
+      element={
+       <AuthRouteGuard>
+        <Login />
+       </AuthRouteGuard>
+      }
+     />
+     <Route
+      path="/staff-login"
+      element={
+       <AuthRouteGuard>
+        <Login />
+       </AuthRouteGuard>
+      }
+     />
+     <Route
+      path="/applicant-signup"
+      element={
+       <AuthRouteGuard>
+        <ApplicantSignup />
+       </AuthRouteGuard>
+      }
+     />
+     <Route
+      path="/forgot-password"
+      element={
+       <AuthRouteGuard>
+        <ForgotPassword />
+       </AuthRouteGuard>
+      }
+     />
+     <Route
+      path="/verify-reset-password"
+      element={
+       <AuthRouteGuard>
+        <VerifyResetPassword />
+       </AuthRouteGuard>
+      }
+     />
+     <Route
+      path="/reset-password"
+      element={
+       <AuthRouteGuard>
+        <ResetPassword />
+       </AuthRouteGuard>
+      }
+     />
+    </Routes>
   </>
  );
 };

@@ -1,20 +1,19 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Dashboard } from "../pages/applicant/Dashboard";
 import { MyApplication } from "../pages/applicant/MyApplication";
 import { Profile } from "../pages/applicant/Profile";
 import { Application } from "../pages/applicant/application/Application";
 import { ApplicationReview } from "../pages/applicant/ApplicationReview";
 import { ProtectedRoute } from "../components/ProtectedRoute";
-import { Toaster } from "sonner";
 
 export const ApplicantRoutes = () => {
- return (
-  <>
-   <Toaster richColors position="top-center" />
-   <Routes>
-    <Route
-     path="dashboard"
-     element={
+  return (
+   <>
+    <Routes>
+     <Route path="/" element={<Navigate to="/applicant/dashboard" replace />} />
+     <Route
+      path="dashboard"
+      element={
       <ProtectedRoute allowedRole="applicant">
        <Dashboard />
       </ProtectedRoute>
@@ -51,8 +50,9 @@ export const ApplicantRoutes = () => {
        <ApplicationReview />
       </ProtectedRoute>
      }
-    />
-   </Routes>
-  </>
- );
+     />
+     <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+   </>
+  );
 };
