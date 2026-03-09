@@ -129,6 +129,7 @@ export const Applicant = () => {
     vehicle_type: app.vehicle_type,
     role: app.role || app.applicant_role || "Student",
      status: resolvedStatus,
+     rejection_remarks: app.rejection_remarks || app.remarks || null,
     sticker_number: app.sticker_number || "Not Assigned",
     // Store images in both formats to ensure compatibility
     vehicle_images: {

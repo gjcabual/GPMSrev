@@ -15,6 +15,8 @@ export const ApproveModal = ({
  const [message, setMessage] = useState("");
  const [isSubmitting, setIsSubmitting] = useState(false);
  const [remarks, setRemarks] = useState("");
+ const isRejectedWithoutRemarks =
+  status === "Rejected" && !String(remarks || "").trim();
 
  // Support both nested (data.applicant.application_id) and flat (data.application_id) shapes
  const applicationId = data?.application_id ?? data?.applicant?.application_id;
@@ -43,7 +45,7 @@ export const ApproveModal = ({
   toast.error("Cannot approve yet. Applicant must upload receipt image, OR number, and amount.");
   return;
  }
-  if (status === "Rejected" && !String(remarks || "").trim()) {
+  if (isRejectedWithoutRemarks) {
    toast.error("Remarks are required when rejecting an application.");
    return;
   }
@@ -178,12 +180,12 @@ export const ApproveModal = ({
         </button>
         <button
          onClick={handleApprove}
-         disabled={isSubmitting}
-         className={`h-10 px-4 rounded-md text-white transition-all ${
-          isSubmitting
-           ? "opacity-70 cursor-not-allowed"
-           : "cursor-pointer hover:shadow-md hover:-translate-y-0.5"
-         } ${
+          disabled={isSubmitting || isRejectedWithoutRemarks}
+          className={`h-10 px-4 rounded-md text-white transition-all ${
+           isSubmitting || isRejectedWithoutRemarks
+            ? "opacity-70 cursor-not-allowed"
+            : "cursor-pointer hover:shadow-md hover:-translate-y-0.5"
+          } ${
           status === "Approved"
            ? "bg-green-500 hover:bg-green-600"
            : "bg-red-500 hover:bg-red-600"

@@ -109,9 +109,11 @@ class StaffView:
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
 
+        status_value = status.value if hasattr(status, "value") else str(status)
+
         # Do not allow approval until applicant uploads receipt image,
         # OR number, and amount from cashier.
-        if status == "Approved":
+        if status_value == "Approved":
             slip = application.slip
             has_receipt_payload = bool(
                 slip
@@ -127,7 +129,7 @@ class StaffView:
                 )
 
         normalized_remarks = (remarks or "").strip()
-        if status == "Rejected" and not normalized_remarks:
+        if status_value == "Rejected" and not normalized_remarks:
             raise HTTPException(
                 status_code=400,
                 detail="Remarks are required when rejecting an application."
@@ -135,8 +137,8 @@ class StaffView:
 
         # Create status update
         new_status = ApplicationStatus(
-            status=status,
-            remarks=normalized_remarks or None,
+            status=status_value,
+            remarks=normalized_remarks if status_value == "Rejected" else (normalized_remarks or None),
             date=date.today(),
             application_id=application_id,
             processed_by=current_user_id
@@ -144,7 +146,7 @@ class StaffView:
         self.db.add(new_status)
         
         # If approved, create and assign a sticker (if doesn't already have one)
-        if status == "Approved" and not application.sticker_id:
+        if status_value == "Approved" and not application.sticker_id:
             # Create sticker
             new_sticker = await self.create_sticker(
                 application_id=application_id,
@@ -156,7 +158,7 @@ class StaffView:
             application.sticker_id = new_sticker.id
         
         # If rejected, remove any existing sticker
-        elif status == "Rejected" and application.sticker_id:
+        elif status_value == "Rejected" and application.sticker_id:
             # Find the sticker object
             sticker_query = select(Sticker).where(Sticker.id == application.sticker_id)
             sticker_result = await self.db.execute(sticker_query)

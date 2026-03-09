@@ -52,6 +52,8 @@ class ApplicantApplicationHistory(BaseModel):
     date_submitted: str = Field(..., description="Application submission date in YYYY-MM-DD format")
     status: str = Field(..., description="Latest application status")
     is_rejected: bool = Field(..., description="True if application was rejected")
+    remarks: Optional[str] = Field(None, description="Latest status remarks")
+    rejection_remarks: Optional[str] = Field(None, description="Rejection remarks if rejected")
     front_image: Optional[str] = Field(None, description="URL to vehicle front image")
     back_image: Optional[str] = Field(None, description="URL to vehicle back image")
     documents: List[DocumentDetail] = Field(default=[], description="List of application documents")

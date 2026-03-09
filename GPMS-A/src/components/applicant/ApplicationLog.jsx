@@ -425,15 +425,16 @@ export const ApplicationLog = ({
       : "N/A",
     },
    { label: "Status:", value: String(selectedItem?.status || "To Submit") },
-   ...(String(selectedItem?.status || "").toLowerCase() === "rejected" &&
-   String(selectedItem?.rejection_remarks || "").trim()
-    ? [
-       {
-        label: "Rejection Remarks:",
-        value: String(selectedItem?.rejection_remarks || ""),
-       },
-      ]
-    : []),
+    ...(String(selectedItem?.status || "").toLowerCase() === "rejected"
+     ? [
+        {
+         label: "Rejection Remarks:",
+         value:
+          String(selectedItem?.rejection_remarks || "").trim() ||
+          "No remarks provided.",
+        },
+       ]
+     : []),
   ];
 
    // Layout details in two columns
@@ -1039,17 +1040,17 @@ export const ApplicationLog = ({
             </p>
            </div>
           </div>
-          {String(selectedItem?.status || "").toLowerCase() === "rejected" &&
-           String(selectedItem?.rejection_remarks || "").trim() && (
+          {String(selectedItem?.status || "").toLowerCase() === "rejected" && (
             <div>
              <p className="font-semibold text-xs sm:text-sm md:text-base">
               Rejection Remarks:
              </p>
-             <p className="mt-1 w-full min-h-10 bg-red-50 border border-red-200 rounded-md p-2 sm:p-3 text-xs sm:text-sm text-red-800">
-              {selectedItem?.rejection_remarks}
-             </p>
-            </div>
-           )}
+              <p className="mt-1 w-full min-h-10 bg-red-50 border border-red-200 rounded-md p-2 sm:p-3 text-xs sm:text-sm text-red-800">
+               {String(selectedItem?.rejection_remarks || "").trim() ||
+                "No remarks provided."}
+              </p>
+             </div>
+            )}
          </div>
         </div>
        </div>

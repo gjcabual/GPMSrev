@@ -226,6 +226,7 @@ class ManagementController:
                 select(
                     ApplicationStatus.application_id,
                     ApplicationStatus.status,
+                    ApplicationStatus.remarks,
                     ApplicationStatus.date,
                     func.row_number().over(
                         partition_by=ApplicationStatus.application_id,
@@ -246,6 +247,7 @@ class ManagementController:
                     Vehicle,
                     Sticker.sticker_id,
                     latest_status.c.status,
+                    latest_status.c.remarks,
                     latest_status.c.date.label('submitted_date')
                 )
                 .join(User, Application.user_id == User.user_id)
@@ -325,7 +327,9 @@ class ManagementController:
                     "sticker_number": app.sticker_id,
                     "date_submitted": app.submitted_date.strftime("%Y-%m-%d") if app.submitted_date else None,  # Modified this line
                     "status": app.status,
-                    "is_rejected": app.status == "Rejected",
+                    "is_rejected": (app.status or "").strip().lower() == "rejected",
+                    "remarks": app.remarks,
+                    "rejection_remarks": app.remarks if (app.status or "").strip().lower() == "rejected" else None,
                     "front_image": await get_vehicle_image_url(
                         app.Vehicle.plate_no, 
                         "front",

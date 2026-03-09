@@ -346,9 +346,10 @@ export const Management = () => {
     plate_number: app.plate_number,
     vehicle_type: app.vehicle_type,
     processed_date: app.date_submitted,
-    role: app.applicant_name ? "Applicant" : "Student",
-     status: resolvedStatus,
-    sticker_number: app.sticker_number || "Not Assigned",
+     role: app.applicant_name ? "Applicant" : "Student",
+      status: resolvedStatus,
+      rejection_remarks: app.rejection_remarks || app.remarks || null,
+     sticker_number: app.sticker_number || "Not Assigned",
     // Store images in both formats to ensure compatibility
     vehicle_images: {
      front: frontImage,
