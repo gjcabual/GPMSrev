@@ -42,6 +42,7 @@ from app.utils.email import (
     send_email_change_success_notice,
     send_password_reset_otp,
 )
+from app.utils.validators import ensure_valid_email, ensure_valid_password
 
 EMAIL_CHANGE_OTP_EXP_MINUTES = 15
 EMAIL_CHANGE_REQUEST_COOLDOWN_SECONDS = 60
@@ -72,8 +73,10 @@ class CommonAuthController:
     @staticmethod
     async def request_password_reset(db: AsyncSession, email: str) -> dict:
         """Create password reset request and send OTP"""
+        normalized_email = ensure_valid_email(email)
+
         # Check if user exists
-        user = await get_user_by_email(db, email=email)
+        user = await get_user_by_email(db, email=normalized_email)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -92,7 +95,7 @@ class CommonAuthController:
         # Send email with OTP
         try:
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, send_password_reset_otp, email, otp)
+            await loop.run_in_executor(None, send_password_reset_otp, normalized_email, otp)
             return {"message": "Password reset OTP has been sent to your email"}
         except Exception as e:
             raise HTTPException(
@@ -105,15 +108,11 @@ class CommonAuthController:
         db: AsyncSession, email: str, otp: str, new_password: str
     ) -> dict:
         """Verify OTP and reset user password"""
-        # Check password strength
-        if len(new_password) < 8:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password must be at least 8 characters long"
-            )
+        normalized_email = ensure_valid_email(email)
+        ensure_valid_password(new_password)
             
         # Find user by email
-        user = await get_user_by_email(db, email=email)
+        user = await get_user_by_email(db, email=normalized_email)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -311,12 +310,7 @@ class CommonAuthController:
     @staticmethod
     async def reset_password(db: AsyncSession, token: str, new_password: str) -> dict:
         """Reset user password using token authentication"""
-        # Check password strength
-        if len(new_password) < 8:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password must be at least 8 characters long"
-            )
+        ensure_valid_password(new_password)
         
         # Get user from token
         user_id = await get_user_id_from_token(db, token)
@@ -350,8 +344,10 @@ class CommonAuthController:
     @staticmethod
     async def verify_reset_otp(db: AsyncSession, email: str, otp: str) -> dict:
         """Verify reset OTP without changing password"""
+        normalized_email = ensure_valid_email(email)
+
         # Find user by email
-        user = await get_user_by_email(db, email=email)
+        user = await get_user_by_email(db, email=normalized_email)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -376,7 +372,7 @@ class CommonAuthController:
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-        normalized_new_email = new_email.strip().lower()
+        normalized_new_email = ensure_valid_email(new_email)
         current_email = user.email.strip().lower()
 
         if normalized_new_email == current_email:

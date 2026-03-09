@@ -110,6 +110,7 @@ export const Login = () => {
         onChange={(e) => setEmail(e.target.value)}
         onKeyDown={handleKeyPress}
         className="border border-gray-500 px-4 h-10 rounded-md outline-none"
+        placeholder="Enter your email address"
        />
       </div>
       <div className="flex flex-col">

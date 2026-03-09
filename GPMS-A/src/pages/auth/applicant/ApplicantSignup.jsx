@@ -7,6 +7,13 @@ import { toast } from "sonner";
 import { VerifyEmail } from "../../../components/auth/VerifyEmail";
 import * as psgcApi from "../../../utils/psgcApi";
 
+const EMAIL_REGEX =
+ /^[A-Za-z0-9]+(?:[._%+-][A-Za-z0-9]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+const PASSWORD_REGEX =
+ /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,72}$/;
+const PASSWORD_POLICY_MESSAGE =
+ "Password must be at least 8 characters and include one uppercase, one number, and one special character.";
+
 const autoFormatMMDDYYYY = (value, prevValue = "") => {
  const raw = String(value ?? "");
  const prev = String(prevValue ?? "");
@@ -194,9 +201,9 @@ export const ApplicantSignup = () => {
    return;
   }
 
-  // Email validation for Gmail accounts only
-  if (!email.toLowerCase().endsWith("@gmail.com")) {
-   toast.error("Please use a Gmail account (@gmail.com)");
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!EMAIL_REGEX.test(normalizedEmail)) {
+   toast.error("Please enter a valid email address");
    return;
   }
 
@@ -205,9 +212,8 @@ export const ApplicantSignup = () => {
    return;
   }
 
-  // Password validation
-  if (password.length < 8) {
-   toast.error("Password must be at least 8 characters long");
+  if (!PASSWORD_REGEX.test(password)) {
+   toast.error(PASSWORD_POLICY_MESSAGE);
    return;
   }
 
@@ -222,7 +228,7 @@ export const ApplicantSignup = () => {
   setIsSubmitting(true);
 
   const formData = new FormData();
-  formData.append("email", email);
+  formData.append("email", normalizedEmail);
   formData.append("password", password);
   formData.append("first_name", firstName);
   formData.append("last_name", lastName);
@@ -334,6 +340,7 @@ export const ApplicantSignup = () => {
          required={true}
          onChange={(e) => setEmail(e.target.value)}
          className="px-4 text-sm h-8 border border-primary rounded-md"
+         placeholder="Enter your email address"
         />
        </div>
        <div className="w-full flex flex-col md:flex-row items-start justify-between gap-3">
@@ -397,9 +404,9 @@ export const ApplicantSignup = () => {
           Password
          </label>
          <div className="relative">
-          <input
-           type={showPassword ? "text" : "password"}
-           value={password}
+         <input
+          type={showPassword ? "text" : "password"}
+          value={password}
            onChange={(e) => setPassword(e.target.value)}
            className="w-full px-4 text-sm h-8 border border-primary rounded-md"
           />
@@ -409,8 +416,9 @@ export const ApplicantSignup = () => {
            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500"
           >
            {showPassword ? <FaEyeSlash size={14} /> : <FaEye size={14} />}
-          </button>
+         </button>
          </div>
+         <p className="mt-1 text-xs text-gray-500">{PASSWORD_POLICY_MESSAGE}</p>
         </div>
         <div className="w-full flex flex-col">
          <label htmlFor="" className="text-sm text-gray-600">

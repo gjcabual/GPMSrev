@@ -38,12 +38,6 @@ async def verify_and_reset_password(
     db: AsyncSession = Depends(get_db)
 ):
     """Verify OTP and reset password"""
-    if len(new_password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
-        )
-    
     return await CommonAuthView.reset_password(db, email, otp, new_password)
 
 @router.post("/reset-password")
@@ -83,11 +77,6 @@ async def set_new_password(
     db: AsyncSession = Depends(get_db)
 ):
     """Step 3: Set new password after OTP verification"""
-    if len(new_password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
-        )
     return await CommonAuthView.verify_otp_and_reset_password(db, email, otp, new_password)
 
 

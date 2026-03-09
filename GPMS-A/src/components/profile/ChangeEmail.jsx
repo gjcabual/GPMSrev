@@ -146,6 +146,7 @@ export const ChangeEmail = ({ close, currentEmail = "" }) => {
         value={newEmail}
         onChange={(e) => setNewEmail(e.target.value)}
         className="h-10 px-4 rounded-md border border-gray-300 outline-none"
+        placeholder="Enter your new email address"
        />
       </div>
       <div className="flex flex-col gap-1">

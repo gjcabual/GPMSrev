@@ -91,6 +91,7 @@ export const AddStaff = ({ close }) => {
          value={email}
          onChange={(e) => setEmail(e.target.value)}
          className="h-10 px-4 border border-primary text-sm outline-none rounded-md"
+         placeholder="Enter email address"
         />
        </div>
        <div className="flex flex-col gap-1 w-full">
