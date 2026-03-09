@@ -163,7 +163,7 @@ async def extract_document_details(
                 _safe_unlink(temp_path)
 
         response = {
-            "OR": {"file_number": None, "expiration_date": None},
+            "OR": {"file_number": None, "registration_date": None, "expiration_date": None},
             "CR": {"file_number": None},
             "DL": {"expiration_date": None, "name": None, "license_number": None},
         }
@@ -172,7 +172,16 @@ async def extract_document_details(
             dt = v["type"]
             if dt == "OR":
                 response["OR"]["file_number"] = r.get("file_number")
-                exp = r.get("dates", {}).get("expiration_date")
+                dates = r.get("dates", {}) or {}
+                reg = dates.get("document_date")
+                if reg:
+                    try:
+                        s = str(reg)
+                        d = datetime.strptime(s, "%Y/%m/%d") if "/" in s else datetime.strptime(s, "%Y-%m-%d")
+                        response["OR"]["registration_date"] = d.strftime("%m/%d/%Y")
+                    except Exception:
+                        response["OR"]["registration_date"] = str(reg)
+                exp = dates.get("expiration_date")
                 if exp:
                     try:
                         s = str(exp)
@@ -216,6 +225,21 @@ async def extract_one_document(
         raise HTTPException(status_code=400, detail="Invalid document type. Use OR, CR, or DL.")
     temp_path = None
     try:
+        def _fmt_to_mmddyyyy(value):
+            if value is None:
+                return None
+            s = str(value).strip()
+            if not s:
+                return None
+            for fmt in ("%Y/%m/%d", "%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y"):
+                try:
+                    d = datetime.strptime(s, fmt)
+                    return d.strftime("%m/%d/%Y")
+                except ValueError:
+                    continue
+            # Keep original if already OCR-provided but not matching known formats.
+            return s
+
         content = await doc_file.read()
         await doc_file.seek(0)
         suffix = os.path.splitext(doc_file.filename or "")[1] or ".bin"
@@ -226,21 +250,9 @@ async def extract_one_document(
         response = {"file_number": None, "expiration_date": None}
         if doc_type == "OR":
             response["file_number"] = result.get("file_number")
-            exp = result.get("dates", {}).get("expiration_date")
-            if exp:
-                try:
-                    s = str(exp)
-                    if "/" in s and len(s.split("/")) >= 2:
-                        parts = s.split("/")
-                        if len(parts) == 3:
-                            d = datetime.strptime(s, "%Y/%m/%d")
-                            response["expiration_date"] = d.strftime("%m/%Y")
-                        else:
-                            response["expiration_date"] = s
-                    else:
-                        response["expiration_date"] = s
-                except Exception:
-                    response["expiration_date"] = str(exp)
+            dates = result.get("dates", {}) or {}
+            response["expiration_date"] = _fmt_to_mmddyyyy(dates.get("expiration_date"))
+            response["registration_date"] = _fmt_to_mmddyyyy(dates.get("document_date"))
         elif doc_type == "CR":
             def _str(v):
                 return str(v).strip() if v is not None else ""
@@ -284,6 +296,8 @@ async def create_application(
     driver_ids: str = Form(None),
     confirmed_or_file_number: str = Form(None),
     confirmed_cr_file_number: str = Form(None),
+    confirmed_or_registered: str = Form(None),
+    confirmed_cr_registered: str = Form(None),
     confirmed_or_expiration: str = Form(None),
     confirmed_dl_expiration: str = Form(None),
     use_account_details_as_applicant: str = Form("true"),
@@ -393,6 +407,8 @@ async def create_application(
         use_confirmed = all([
             confirmed_or_file_number and confirmed_or_file_number.strip(),
             confirmed_cr_file_number and confirmed_cr_file_number.strip(),
+            confirmed_or_registered and confirmed_or_registered.strip(),
+            confirmed_cr_registered and confirmed_cr_registered.strip(),
             confirmed_or_expiration and confirmed_or_expiration.strip(),
             confirmed_dl_expiration and confirmed_dl_expiration.strip(),
         ])
@@ -436,6 +452,27 @@ async def create_application(
         # Process the validated documents to extract information (without re-validating)
         documents_data = []
         or_expiration = None
+        today = datetime.now().date()
+
+        def _parse_full_date(value: str, label: str):
+            s = str(value or "").strip()
+            for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y"):
+                try:
+                    return datetime.strptime(s, fmt).date()
+                except ValueError:
+                    continue
+            raise HTTPException(status_code=400, detail=f"Invalid {label} format. Use MM/DD/YYYY.")
+
+        def _parse_or_expiration(value: str):
+            s = str(value or "").strip()
+            # Backward compatibility for older clients still sending MM/YYYY.
+            mm_yyyy = re.match(r"^(\d{2})/(\d{4})$", s)
+            if mm_yyyy:
+                exp_date = datetime.strptime(s, "%m/%Y")
+                exp_date = exp_date.replace(day=28) + timedelta(days=4)
+                exp_date = exp_date - timedelta(days=exp_date.day)
+                return exp_date.date()
+            return _parse_full_date(s, "OR expiration")
 
         for validation_data in validation_results:
             try:
@@ -445,20 +482,13 @@ async def create_application(
 
                 if use_confirmed:
                     if doc_type == "OR":
-                        try:
-                            exp_date = datetime.strptime(confirmed_or_expiration.strip(), "%m/%Y")
-                        except ValueError:
-                            raise HTTPException(status_code=400, detail="Invalid OR expiration format. Use MM/YYYY.")
-                        exp_date = exp_date.replace(day=28) + timedelta(days=4)
-                        exp_date = exp_date - timedelta(days=exp_date.day)
+                        reg_date = _parse_full_date(confirmed_or_registered, "OR registration date")
+                        exp_date = _parse_or_expiration(confirmed_or_expiration)
                     elif doc_type == "CR":
-                        try:
-                            exp_date = datetime.strptime(confirmed_or_expiration.strip(), "%m/%Y")
-                        except ValueError:
-                            raise HTTPException(status_code=400, detail="Invalid OR expiration format. Use MM/YYYY.")
-                        exp_date = exp_date.replace(day=28) + timedelta(days=4)
-                        exp_date = exp_date - timedelta(days=exp_date.day)
+                        reg_date = _parse_full_date(confirmed_cr_registered, "CR date issued")
+                        exp_date = None
                     else:
+                        reg_date = today
                         try:
                             exp_date = datetime.strptime(confirmed_dl_expiration.strip(), "%Y/%m/%d")
                         except ValueError:
@@ -469,6 +499,7 @@ async def create_application(
                 else:
                     if doc_type == "OR":
                         or_expiration = validation_result['dates']['expiration_date']
+                        reg_date = today
                         try:
                             exp_date = datetime.strptime(or_expiration, "%m/%Y")
                         except ValueError:
@@ -476,6 +507,7 @@ async def create_application(
                         exp_date = exp_date.replace(day=28) + timedelta(days=4)
                         exp_date = exp_date - timedelta(days=exp_date.day)
                     elif doc_type == "CR":
+                        reg_date = today
                         try:
                             exp_date = datetime.strptime(or_expiration, "%m/%Y")
                         except ValueError:
@@ -483,6 +515,7 @@ async def create_application(
                         exp_date = exp_date.replace(day=28) + timedelta(days=4)
                         exp_date = exp_date - timedelta(days=exp_date.day)
                     else:
+                        reg_date = today
                         exp_date = datetime.strptime(
                             validation_result['dates']['expiration_date'],
                             "%Y/%m/%d"
@@ -491,8 +524,8 @@ async def create_application(
                 documents_data.append({
                     "type": get_full_document_type(doc_type),
                     "image": content,
-                    "registered_date": datetime.now().date(),
-                    "expired_at": exp_date.date()
+                    "registered_date": reg_date,
+                    "expired_at": exp_date.date() if isinstance(exp_date, datetime) else exp_date
                 })
             finally:
                 _safe_unlink(validation_data.get("temp_path"))

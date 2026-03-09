@@ -142,7 +142,7 @@ class DocumentCreate(BaseModel):
     type: str  # Will now accept "Official Receipt", "Certificate of Registration", "Driver's License"
     image: bytes
     registered_date: date
-    expired_at: date
+    expired_at: Optional[date] = None
 
     @validator('type')
     def validate_document_type(cls, v):
@@ -237,14 +237,14 @@ class VehicleResponse(BaseModel):
 class DriverDocumentResponse(BaseModel):
     type: str
     registered_date: date
-    expired_at: date
+    expired_at: Optional[date] = None
     image: Optional[str] = None
 
 
 class DocumentResponse(BaseModel):
     type: str
     registered_date: date
-    expired_at: date
+    expired_at: Optional[date] = None
     image: Optional[str] = None
 
     class Config:

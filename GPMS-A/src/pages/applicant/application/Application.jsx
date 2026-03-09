@@ -190,12 +190,13 @@ export const Application = () => {
  const [documentStepIndex, setDocumentStepIndex] = useState(0);
  const [reopenDocAt, setReopenDocAt] = useState(null);
  const [extractedDocDetails, setExtractedDocDetails] = useState({
-  OR: { file_number: "", expiration_date: "" },
+  OR: { file_number: "", registration_date: "", expiration_date: "" },
   CR: { file_number: "", date: "", owner_name: "", owner_address: "", plate_number: "", make: "", year_model: "", body_type: "", piston_displacement: "" },
   DL: { expiration_date: "", name: "", license_number: "" },
  });
  const [confirmedDocDetails, setConfirmedDocDetails] = useState({
   or_file_number: "",
+  or_registered: "",
   cr_file_number: "",
   or_expiration: "",
   dl_expiration: "",
@@ -360,10 +361,12 @@ useEffect(() => {
  };
 
  const getMissingConfirmedDetailFields = () => {
-  const requiredFields = [
+ const requiredFields = [
    { key: "cr_file_number", label: "CR file number" },
+   { key: "cr_date", label: "CR date issued" },
    { key: "cr_owner_name", label: "CR owner's name" },
    { key: "or_file_number", label: "OR file number" },
+   { key: "or_registered", label: "OR registration date" },
    { key: "or_expiration", label: "OR expiration" },
    { key: "dl_expiration", label: "DL expiration" },
   ];
@@ -464,10 +467,13 @@ useEffect(() => {
    formData.append("doc_types", "OR,CR,DL");
 
   if (confirmedDocDetails.or_file_number && confirmedDocDetails.cr_file_number &&
+      confirmedDocDetails.or_registered && confirmedDocDetails.cr_date &&
       confirmedDocDetails.or_expiration && confirmedDocDetails.dl_expiration) {
    formData.append("confirmed_or_file_number", confirmedDocDetails.or_file_number);
    formData.append("confirmed_cr_file_number", confirmedDocDetails.cr_file_number);
-   formData.append("confirmed_or_expiration", normalizeToMMYYYY(confirmedDocDetails.or_expiration));
+   formData.append("confirmed_or_registered", normalizeDateToISO(confirmedDocDetails.or_registered));
+   formData.append("confirmed_cr_registered", normalizeDateToISO(confirmedDocDetails.cr_date));
+   formData.append("confirmed_or_expiration", normalizeDateToISO(confirmedDocDetails.or_expiration));
    formData.append("confirmed_dl_expiration", normalizeDateToISO(confirmedDocDetails.dl_expiration));
   }
 
@@ -2353,6 +2359,7 @@ const Step4 = ({
  const [modalDocType, setModalDocType] = useState(null);
  const [modalForm, setModalForm] = useState({
   file_number: "",
+  registration_date: "",
   expiration_date: "",
   name: "",
   license_number: "",
@@ -2489,9 +2496,11 @@ const fileInputRef = useRef(null);
    });
   } else if (docType === "OR" || docType === "DL") {
    const exp = toStr(data.expiration_date);
+   const reg = toStr(data.registration_date);
    setModalForm((prev) => ({
     ...prev,
     file_number: toStr(data.file_number),
+    registration_date: docType === "OR" ? (toMMDDYYYYValue(reg) || reg) : prev.registration_date,
     expiration_date: toMMDDYYYYValue(exp) || exp,
     name: docType === "DL" ? toStr(data.name) : prev.name,
     license_number: docType === "DL"
@@ -2630,6 +2639,8 @@ const fileInputRef = useRef(null);
     return {
      _docType: "OR",
      file_number: confirmedDocDetails?.or_file_number || extractedDocDetails?.OR?.file_number || "",
+     registration_date:
+      confirmedDocDetails?.or_registered || extractedDocDetails?.OR?.registration_date || "",
      expiration_date:
       confirmedDocDetails?.or_expiration || extractedDocDetails?.OR?.expiration_date || "",
     };
@@ -2663,9 +2674,10 @@ const fileInputRef = useRef(null);
      piston_displacement: String(payload.piston_displacement || "").trim(),
     };
    }
-   return {
-    file_number: String(payload.file_number || "").trim(),
-    expiration_date: toMMDDYYYYValue(payload.expiration_date || ""),
+  return {
+   file_number: String(payload.file_number || "").trim(),
+   registration_date: docType === "OR" ? toMMDDYYYYValue(payload.registration_date || "") : "",
+   expiration_date: toMMDDYYYYValue(payload.expiration_date || ""),
     name: docType === "DL" ? String(payload.name || "").trim() : "",
     license_number:
      docType === "DL"
@@ -2771,7 +2783,7 @@ const fileInputRef = useRef(null);
     ? (toStr(payload.file_number) || toStr(payload.owner_name) || toStr(payload.plate_number) || toStr(payload.year_model) || toStr(payload.piston_displacement))
     : docType === "DL"
      ? (toStr(payload.expiration_date) || toStr(payload.name) || toStr(payload.license_number))
-     : (toStr(payload.file_number) || toStr(payload.expiration_date));
+     : (toStr(payload.file_number) || toStr(payload.registration_date) || toStr(payload.expiration_date));
    if (!hasExtractedData) {
     toast.info("No data was extracted from the document. Please enter the details manually.");
    }
@@ -2802,9 +2814,10 @@ const fileInputRef = useRef(null);
       };
      }
      const exp = toStr(payload.expiration_date);
-      return {
+     return {
        ...prev,
        file_number: toStr(payload.file_number),
+       registration_date: docType === "OR" ? (toMMDDYYYYValue(toStr(payload.registration_date)) || toStr(payload.registration_date)) : prev.registration_date,
        expiration_date: toMMDDYYYYValue(exp) || exp,
        name: docType === "DL" ? toStr(payload.name) : prev.name,
        license_number: docType === "DL"
@@ -2868,6 +2881,9 @@ const fileInputRef = useRef(null);
      }
      : {
        file_number: doc !== "DL" ? (effective("file_number") || prev[doc]?.file_number) : prev[doc]?.file_number,
+        registration_date: doc === "OR"
+         ? (effective("registration_date") || prev[doc]?.registration_date || "")
+         : prev[doc]?.registration_date,
         expiration_date: (effective("expiration_date") || prev[doc]?.expiration_date) ?? "",
         name: doc === "DL" ? (effective("name") || prev.DL?.name || "") : prev[doc]?.name,
         license_number: doc === "DL"
@@ -2898,6 +2914,7 @@ const fileInputRef = useRef(null);
    }),
    ...(doc === "OR" && {
     or_file_number: effective("file_number") || prev.or_file_number,
+    or_registered: effective("registration_date") || prev.or_registered,
     or_expiration: effective("expiration_date") || prev.or_expiration,
    }),
     ...(doc === "DL" && {
@@ -2925,7 +2942,7 @@ const fileInputRef = useRef(null);
   extractedPayloadRef.current = null;
   setPendingExtractedData(null);
   setModalForm({
-   file_number: "", expiration_date: "", name: "", license_number: "", date: "", owner_name: "", owner_address: "",
+   file_number: "", registration_date: "", expiration_date: "", name: "", license_number: "", date: "", owner_name: "", owner_address: "",
    plate_number: "", plate_number_blank_or_temp: false,
    make: "", year_model: "", body_type: "", body_type_other: "", make_other: "", piston_displacement: "",
   });
@@ -2969,7 +2986,7 @@ const fileInputRef = useRef(null);
   };
 
   if (doc === "OR") {
-   return !valueOf("file_number") || !valueOf("expiration_date");
+   return !valueOf("file_number") || !valueOf("registration_date") || !valueOf("expiration_date");
   }
 
   if (doc === "DL") {
@@ -3139,6 +3156,26 @@ const fileInputRef = useRef(null);
            onChange={(e) => setModalForm((prev) => ({ ...prev, file_number: e.target.value }))}
            className="w-full px-3 py-2 border border-gray-300 rounded-md"
            placeholder="e.g. 150100000342937"
+          />
+         </div>
+        )}
+        {modalDocType === "OR" && (
+         <div>
+          <label className="block text-sm text-gray-600 mb-1">Registration date</label>
+          <input
+           type="text"
+           value={toMMDDYYYYValue(f("registration_date"))}
+           onChange={(e) =>
+            setModalForm((prev) => ({
+             ...prev,
+             registration_date: autoFormatMMDDYYYYInput(
+              e.target.value,
+              toMMDDYYYYValue(f("registration_date"))
+             ),
+            }))
+           }
+           className="w-full px-3 py-2 border border-gray-300 rounded-md"
+           placeholder="MM/DD/YYYY"
           />
          </div>
         )}
@@ -3620,6 +3657,7 @@ const Step5ConfirmDetails = ({
 }) => {
   const fromOcr = (key) => {
   const v = key === "or_file_number" ? extractedDocDetails?.OR?.file_number
+    : key === "or_registered" ? extractedDocDetails?.OR?.registration_date
     : key === "cr_file_number" ? extractedDocDetails?.CR?.file_number
     : key === "cr_owner_name" ? extractedDocDetails?.CR?.owner_name
     : key === "or_expiration" ? extractedDocDetails?.OR?.expiration_date
@@ -3693,7 +3731,7 @@ const Step5ConfirmDetails = ({
      {/* OR section */}
      <div className="space-y-3">
       <h2 className="text-sm font-semibold text-gray-800">Official Receipt (OR)</h2>
-      <div>
+     <div>
        <label className="block text-sm font-medium text-gray-700 mb-1">
         OR file number
        </label>
@@ -3710,6 +3748,26 @@ const Step5ConfirmDetails = ({
         placeholder={fromOcr("or_file_number") ? "" : "Not extracted – please enter (e.g. 150100000342937)"}
        />
        {fromOcr("or_file_number") && (
+         <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>
+       )}
+      </div>
+      <div>
+       <label className="block text-sm font-medium text-gray-700 mb-1">
+        OR registration date (MM/DD/YYYY)
+       </label>
+       <input
+        type="text"
+        value={confirmedDocDetails.or_registered ?? ""}
+        onChange={(e) =>
+         setConfirmedDocDetails((prev) => ({
+          ...prev,
+          or_registered: autoFormatMMDDYYYYInput(e.target.value, confirmedDocDetails.or_registered ?? ""),
+         }))
+        }
+        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+        placeholder="MM/DD/YYYY"
+       />
+       {fromOcr("or_registered") && (
          <p className="text-xs text-blue-600 mt-0.5">Filled from your document – edit if wrong.</p>
        )}
       </div>

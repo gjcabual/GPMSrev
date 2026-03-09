@@ -10,7 +10,7 @@ class Document(Base):
     type = Column(String(255), nullable=False)
     image = Column(LargeBinary, nullable=True)
     registered_date = Column(Date, nullable=False)
-    expired_at = Column(Date, nullable=False)
+    expired_at = Column(Date, nullable=True)
 
     plate_no = Column(String(255), ForeignKey("vehicles_tbl.plate_no"), nullable=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users_tbl.user_id"), nullable=False)

@@ -93,6 +93,12 @@ async def init_db():
                 "ADD COLUMN IF NOT EXISTS remarks VARCHAR(500)"
             )
         )
+        await conn.execute(
+            text(
+                "ALTER TABLE documents_tbl "
+                "ALTER COLUMN expired_at DROP NOT NULL"
+            )
+        )
 
 @app.on_event("startup")
 async def startup_event():
