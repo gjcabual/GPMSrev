@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware 
+from sqlalchemy import text
 from app.db.session import engine
 from app.db.models.user import Base as UserBase
 from app.db.models.profile import Base as ProfileBase
@@ -57,6 +58,21 @@ async def init_db():
         await conn.run_sync(BatchStickerSessionsBase.metadata.create_all)
         await conn.run_sync(AssignedDriverBase.metadata.create_all)
         await conn.run_sync(EmailChangeBase.metadata.create_all)
+
+        # Backward-compatible schema patch for existing databases.
+        # Ensures new batch-name feature does not break batch/report endpoints.
+        await conn.execute(
+            text(
+                "ALTER TABLE batch_sticker_sessions_tbl "
+                "ADD COLUMN IF NOT EXISTS batch_name VARCHAR(100)"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE batch_sticker_sessions_tbl "
+                "SET batch_name = COALESCE(NULLIF(TRIM(batch_name), ''), 'Legacy Batch')"
+            )
+        )
 
 @app.on_event("startup")
 async def startup_event():

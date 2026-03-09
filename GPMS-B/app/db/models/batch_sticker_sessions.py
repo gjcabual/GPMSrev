@@ -7,6 +7,7 @@ class BatchStickerSessions(Base):
 
     batch_id = Column(Integer, primary_key=True, index=True)
     type = Column(String(100), nullable=False)
+    batch_name = Column(String(100), nullable=True)
     start_at = Column(Integer, nullable=False)
     end_at = Column(Integer, nullable=False)
     price = Column(Integer, nullable=False)

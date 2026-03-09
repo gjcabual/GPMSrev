@@ -85,15 +85,16 @@ export const BatchSticker = ({ close }) => {
         There are no Gate Pass Sticker Batches yet.
        </div>
       ) : (
-       batches.map((data, index) => (
-        <div key={index} className="">
-         {/* Batch Header with Divider */}
-         <div className="flex items-center gap-2 mt-5">
-          <h1 className="shrink-0 text-lg font-medium text-gray-500">
-           Batch {data?.batch_no}
-          </h1>
-          <hr className="flex-grow bg-gray-200 h-[1px] border-0" />
-         </div>
+        batches.map((data, index) => (
+         <div key={index} className="">
+          {/* Batch Header with Divider */}
+          <div className="flex items-center gap-2 mt-5">
+           <h1 className="shrink-0 text-lg font-medium text-gray-500">
+            Batch {data?.batch_no}
+            {data?.batch_name ? ` - ${data.batch_name}` : ""}
+           </h1>
+           <hr className="flex-grow bg-gray-200 h-[1px] border-0" />
+          </div>
 
          {/* Batch Details Grid */}
          <div className="grid grid-cols-2 gap-5 rounded-md mt-4 mx-32">
@@ -151,8 +152,9 @@ export const BatchSticker = ({ close }) => {
 };
 
 const BatchRegister = ({ close, getBatchStickers }) => {
- const [success, setSuccess] = useState(false);
- const [stickers, setStickers] = useState([
+  const [success, setSuccess] = useState(false);
+  const [batchName, setBatchName] = useState("");
+  const [stickers, setStickers] = useState([
   { id: 1, title: "Employee", StartAt: "", EndAt: "", color: "#028B58" },
   { id: 2, title: "Dropoff", StartAt: "", EndAt: "", color: "#610187" },
   { id: 3, title: "Student", StartAt: "", EndAt: "", color: "#D6D148" },
@@ -208,12 +210,17 @@ const BatchRegister = ({ close, getBatchStickers }) => {
  };
 
  const handleCreateSticker = async () => {
-  if (!isChecked) {
+   if (!isChecked) {
    toast.error(
     "Please confirm that the data entered is accurate and complete."
    );
-   return;
-  }
+    return;
+   }
+
+   if (!batchName.trim()) {
+    toast.error("Please enter a batch name.");
+    return;
+   }
 
   // Check if at least one sticker has valid StartAt and EndAt values
   const hasValidSticker = stickers.some(
@@ -229,10 +236,11 @@ const BatchRegister = ({ close, getBatchStickers }) => {
 
   setIsCreating(true);
 
-  try {
-   const formData = new FormData();
+   try {
+    const formData = new FormData();
+    formData.append("batch_name", batchName.trim());
 
-   stickers.forEach((data) => {
+    stickers.forEach((data) => {
     const keyPrefix = data.title.toLowerCase().replace(/\s+/g, "_");
     formData.append(`${keyPrefix}_start_at`, data.StartAt);
     formData.append(`${keyPrefix}_end_at`, data.EndAt);
@@ -252,7 +260,12 @@ const BatchRegister = ({ close, getBatchStickers }) => {
     await getBatchStickers(); // Refresh the batch stickers after successful addition
     close();
    } else {
-    toast.error(data.detail.message);
+    const errorMessage =
+     data?.detail?.message ||
+     (typeof data?.detail === "string" ? data.detail : null) ||
+     data?.message ||
+     "Failed to create sticker batch.";
+    toast.error(errorMessage);
    }
   } catch (err) {
    console.error(err);
@@ -280,7 +293,23 @@ const BatchRegister = ({ close, getBatchStickers }) => {
     </button>
    </div>
 
-   <div className="mt-10 grid grid-cols-4 gap-5 mx-32 bg-gray-100 p-8 rounded-md">
+    <div className="mt-8 mx-32">
+     <div className="max-w-md mb-5">
+      <label className="block mb-2 text-sm font-medium text-gray-700">
+       Batch Name
+      </label>
+      <input
+       type="text"
+       className="h-10 w-full border border-gray-300 px-4 rounded-md"
+       value={batchName}
+       onChange={(e) => setBatchName(e.target.value)}
+       placeholder="e.g. SY 2026 Batch A"
+       maxLength={100}
+      />
+     </div>
+    </div>
+
+    <div className="mt-4 grid grid-cols-4 gap-5 mx-32 bg-gray-100 p-8 rounded-md">
     {stickers.map((data) => (
      <div key={data?.id} className="bg-white border border-gray-200 rounded-md">
       <div style={{ backgroundColor: data.color }} className="p-4 rounded-md">
@@ -324,15 +353,17 @@ const BatchRegister = ({ close, getBatchStickers }) => {
      </label>
     </div>
     <div className="mt-5">
-     <button
-      onClick={handleCreateSticker}
-      className={`h-10 bg-primary text-white rounded-md px-4 font-medium cursor-pointer ${
-       !isChecked || isCreating ? "opacity-50 cursor-not-allowed" : ""
-      }`}
-      disabled={!isChecked || isCreating}
-     >
-      Register
-     </button>
+      <button
+       onClick={handleCreateSticker}
+       className={`h-10 bg-primary text-white rounded-md px-4 font-medium cursor-pointer ${
+        !isChecked || isCreating || !batchName.trim()
+         ? "opacity-50 cursor-not-allowed"
+         : ""
+       }`}
+       disabled={!isChecked || isCreating || !batchName.trim()}
+      >
+       Register
+      </button>
      {success && (
       <SuccessModal
        desc="Sticker batch has been successfully added."

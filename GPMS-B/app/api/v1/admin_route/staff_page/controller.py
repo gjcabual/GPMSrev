@@ -101,7 +101,11 @@ class StaffController:
         
         return {"has_conflict": False}
         
-    async def create_batch_sticker_sessions(self, batches: List[BatchStickerCreate]) -> List[BatchStickerSessions]:
+    async def create_batch_sticker_sessions(
+        self,
+        batches: List[BatchStickerCreate],
+        batch_name: str
+    ) -> List[BatchStickerSessions]:
         """Create multiple batch sticker sessions at once"""
         # Check for conflicts with existing ranges first
         conflict_info = await self.check_range_conflicts(batches)
@@ -122,6 +126,7 @@ class StaffController:
             
             new_batch = BatchStickerSessions(
                 type=batch_data.type.value,
+                batch_name=batch_name,
                 start_at=batch_data.start_at,
                 end_at=batch_data.end_at,
                 price=price,
@@ -185,13 +190,15 @@ class StaffController:
         timestamp_order = []
         
         for batch in all_batches:
-            # Use the exact timestamp as key for grouping
-            time_key = batch.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            # Use microsecond precision so separate registrations
+            # within the same second don't get merged.
+            time_key = batch.created_at.strftime("%Y-%m-%d %H:%M:%S.%f")
             
             if time_key not in grouped_by_exact_time:
                 grouped_by_exact_time[time_key] = {
                     "created_at": batch.created_at.date(),  # Convert to date only
                     "exact_timestamp": batch.created_at,    # Keep exact timestamp for sorting
+                    "batch_name": batch.batch_name,
                     "student": None,
                     "employee": None,
                     "dropoff": None,
