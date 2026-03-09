@@ -17,6 +17,8 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     role = Column(Integer, default=0, nullable=False)
+    failed_login_attempts = Column(Integer, default=0, nullable=False)
+    lock_until = Column(DateTime, nullable=True)
 
     # Relationship with applications
     applications = relationship("Application", back_populates="user")

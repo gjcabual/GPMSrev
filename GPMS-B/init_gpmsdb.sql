@@ -23,7 +23,9 @@ CREATE TABLE users_tbl (
     verified_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    role INTEGER NOT NULL DEFAULT 0
+    role INTEGER NOT NULL DEFAULT 0,
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    lock_until TIMESTAMP
 );
 CREATE INDEX idx_users_email ON users_tbl(email);
 

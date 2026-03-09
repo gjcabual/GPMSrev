@@ -15,8 +15,50 @@ from app.db.models.token import Token as TokenModel
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm, db: Session, required_role: int):
+    now = datetime.now()
     user = await get_user_by_email(db, email=form_data.username)
+    if user and user.lock_until and user.lock_until > now:
+        remaining_minutes = max(
+            1, int((user.lock_until - now).total_seconds() // 60) + 1
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed login attempts. Try again in {remaining_minutes} minute(s).",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     if not user or not verify_password(form_data.password, user.password):
+        if user:
+            next_attempts = (user.failed_login_attempts or 0) + 1
+            lock_until = None
+            remaining_attempts = max(0, settings.MAX_LOGIN_ATTEMPTS - next_attempts)
+            detail = (
+                f"Incorrect username or password. {remaining_attempts} attempt(s) remaining."
+            )
+
+            if next_attempts >= settings.MAX_LOGIN_ATTEMPTS:
+                lock_until = now + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+                next_attempts = 0
+                detail = (
+                    f"Attempt {settings.MAX_LOGIN_ATTEMPTS}/{settings.MAX_LOGIN_ATTEMPTS}. "
+                    f"Too many failed login attempts. Account locked for "
+                    f"{settings.LOGIN_LOCKOUT_MINUTES} minutes."
+                )
+
+            user.failed_login_attempts = next_attempts
+            user.lock_until = lock_until
+            await db.commit()
+
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_429_TOO_MANY_REQUESTS
+                    if lock_until is not None
+                    else status.HTTP_401_UNAUTHORIZED
+                ),
+                detail=detail,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -38,6 +80,12 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm, db: Sessi
             detail="User does not have the required role",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Successful login: reset lockout counters.
+    if (user.failed_login_attempts or 0) != 0 or user.lock_until is not None:
+        user.failed_login_attempts = 0
+        user.lock_until = None
+        await db.commit()
     
     # Delete existing tokens for this user
     delete_query = delete(TokenModel).where(TokenModel.user_id == user.user_id)

@@ -74,6 +74,20 @@ async def init_db():
             )
         )
 
+        # Login lockout columns for existing databases.
+        await conn.execute(
+            text(
+                "ALTER TABLE users_tbl "
+                "ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE users_tbl "
+                "ADD COLUMN IF NOT EXISTS lock_until TIMESTAMP"
+            )
+        )
+
 @app.on_event("startup")
 async def startup_event():
     await init_db()
