@@ -13,6 +13,7 @@ export const Management = () => {
  const [selectedApplicant, setSelectedApplicant] = useState(null);
  const [searchQuery, setSearchQuery] = useState("");
  const [vehicleType, setVehicleType] = useState("All");
+ const [stickerType, setStickerType] = useState("All");
  const [timeFilter, setTimeFilter] = useState("year");
  // Add new state for tracking view mode and application logs
  const [viewMode, setViewMode] = useState("management"); // Options: "management" or "logs"
@@ -242,6 +243,28 @@ export const Management = () => {
  });
  const filterTimeoutRef = useRef(null);
 
+ const getStickerTypeLabel = (item) =>
+  (item?.applicant?.role || item?.application_role || item?.role || "").trim();
+
+ useEffect(() => {
+  const list = Array.isArray(applications)
+   ? applications
+   : [
+      ...(applications?.pending_applications || []),
+      ...(applications?.approved_applications || []),
+     ];
+
+  if (stickerType === "All") {
+   setFilteredApplications(applications);
+   return;
+  }
+
+  const filtered = list.filter(
+   (item) => getStickerTypeLabel(item).toLowerCase() === stickerType.toLowerCase()
+  );
+  setFilteredApplications(filtered);
+ }, [applications, stickerType]);
+
  const getApprovedApplications = async () => {
   setIsLoading(true);
   try {
@@ -266,7 +289,6 @@ export const Management = () => {
 
    const data = await res.json();
    setApplications(data);
-   setFilteredApplications(data);
   } catch (err) {
    console.error("Error fetching applications:", err);
   } finally {
@@ -538,6 +560,18 @@ export const Management = () => {
        <option value="Tricycle">Tricycle</option>
       </select>
 
+      <select
+       className="h-10 bg-gray-200 rounded-md outline-none px-5"
+       value={stickerType}
+       onChange={(e) => setStickerType(e.target.value)}
+      >
+       <option value="All">All Stickers</option>
+       <option value="Student">Student</option>
+       <option value="Employee Parking">Employee Parking</option>
+       <option value="Concessionaire">Concessionaire</option>
+       <option value="Drop-off">Drop-off</option>
+      </select>
+
       {/* Time Filter Dropdown */}
       <select
        className="h-10 bg-gray-200 rounded-md outline-none px-5"
@@ -621,7 +655,7 @@ export const Management = () => {
        data={filteredApplications}
        selectData={selectedApplicant}
       />
-      <div className="mt-4 sticky top-0 z-40 bg-gray-50/95 backdrop-blur-sm border border-gray-200 rounded-md px-2 py-2 flex gap-2 justify-end">
+      <div className="mt-4 sticky top-0 z-40 backdrop-blur-sm rounded-md px-2 py-2 flex gap-2 justify-end">
        <div className="relative w-full max-w-[280px]">
         <input
          type="text"
@@ -647,7 +681,7 @@ export const Management = () => {
        </div>
 
        <select
-        className="h-9 bg-gray-200 rounded-md outline-none px-5 text-sm"
+        className="h-9 bg-gray-200 rounded-md outline-none px-6 text-sm"
         value={vehicleType}
         onChange={(e) => setVehicleType(e.target.value)}
        >
@@ -659,7 +693,19 @@ export const Management = () => {
        </select>
 
        <select
-        className="h-9 bg-gray-200 rounded-md outline-none px-4 text-sm"
+        className="h-9 bg-gray-200 rounded-md outline-none px-5 text-sm"
+        value={stickerType}
+        onChange={(e) => setStickerType(e.target.value)}
+       >
+        <option value="All">All Stickers</option>
+        <option value="Student">Student</option>
+        <option value="Employee Parking">Employee Parking</option>
+        <option value="Concessionaire">Concessionaire</option>
+        <option value="Drop-off">Drop-off</option>
+       </select>
+
+       <select
+        className="h-9 bg-gray-200 rounded-md outline-none px-6 text-sm"
         value={timeFilter}
         onChange={(e) => setTimeFilter(e.target.value)}
        >

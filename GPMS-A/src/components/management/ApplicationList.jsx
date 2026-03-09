@@ -192,14 +192,14 @@ export const ApplicationList = ({
   <>
    {/* Header Row - now properly aligned with data rows */}
    <div className={`grid ${gridColsClass} gap-1 border-b border-gray-300 pb-2 items-center px-2`}>
-    <h1 className="text-lg font-medium text-primary text-left truncate pl-2">
-     Plate #
-    </h1>
     {isManagement && (
      <h1 className="text-lg font-medium text-primary text-left truncate">
       Sticker
      </h1>
     )}
+    <h1 className="text-lg font-medium text-primary text-left truncate pl-2">
+     Plate #
+    </h1>
     <h1 className="text-lg font-medium text-primary text-left truncate">
      Applicant
     </h1>
@@ -230,10 +230,10 @@ export const ApplicationList = ({
                       ${isSelected ? "bg-gray-300" : "hover:bg-gray-200"}`}
        onClick={() => handleSelect(item)}
       >
-       <div className="text-left truncate pl-2">{getPlateNumber(item)}</div>
        {isManagement && (
         <div className="text-left truncate">{getStickerID(item)}</div>
        )}
+       <div className="text-left truncate pl-2">{getPlateNumber(item)}</div>
        <div className="text-left truncate">{getApplicantName(item)}</div>
        <div className="text-left truncate">{getModel(item)}</div>
        <div className="text-left truncate">{getVehicleType(item)}</div>
