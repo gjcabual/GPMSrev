@@ -32,6 +32,7 @@ class StaffController:
         return await self.view.create_status_update(
             application_id=status_update.application_id,
             status=status_update.status,
+            remarks=status_update.remarks,
             current_user_id=current_user_id
         )
 

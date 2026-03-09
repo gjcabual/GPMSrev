@@ -151,6 +151,7 @@ const transformApplicationData = (applications) => {
    vehicle_type: app.vehicle_type,
    role: app.applicant_name ? "Applicant" : app.role || "Student",
    status: app.is_rejected ? "Rejected" : app.status || "Approved",
+   rejection_remarks: app.rejection_remarks || app.remarks || null,
    sticker_number: app.sticker_number || app.sticker_id || "Not Assigned",
    // Store images in both formats to ensure compatibility
    vehicle_images: {
@@ -423,8 +424,17 @@ export const ApplicationLog = ({
         })
       : "N/A",
     },
-    { label: "Status:", value: String(selectedItem?.status || "To Submit") },
-   ];
+   { label: "Status:", value: String(selectedItem?.status || "To Submit") },
+   ...(String(selectedItem?.status || "").toLowerCase() === "rejected" &&
+   String(selectedItem?.rejection_remarks || "").trim()
+    ? [
+       {
+        label: "Rejection Remarks:",
+        value: String(selectedItem?.rejection_remarks || ""),
+       },
+      ]
+    : []),
+  ];
 
    // Layout details in two columns
    const colWidth = (pageWidth - margin * 2) / 2;
@@ -1029,6 +1039,17 @@ export const ApplicationLog = ({
             </p>
            </div>
           </div>
+          {String(selectedItem?.status || "").toLowerCase() === "rejected" &&
+           String(selectedItem?.rejection_remarks || "").trim() && (
+            <div>
+             <p className="font-semibold text-xs sm:text-sm md:text-base">
+              Rejection Remarks:
+             </p>
+             <p className="mt-1 w-full min-h-10 bg-red-50 border border-red-200 rounded-md p-2 sm:p-3 text-xs sm:text-sm text-red-800">
+              {selectedItem?.rejection_remarks}
+             </p>
+            </div>
+           )}
          </div>
         </div>
        </div>

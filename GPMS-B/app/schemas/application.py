@@ -14,11 +14,13 @@ class StatusEnum(str, Enum):
 class ApplicationStatusUpdate(BaseModel):
     status: StatusEnum
     application_id: int
+    remarks: Optional[str] = None
 
 # Response model for application status
 class ApplicationStatusResponse(BaseModel):
     status_id: int
     status: str
+    remarks: Optional[str] = None
     date: date
     application_id: int
     processed_by: UUID | None
@@ -34,11 +36,13 @@ class StatusUpdateResponse(BaseModel):
 # Form model for request handling
 async def form_body(
     status: StatusEnum = Form(...),
-    application_id: int = Form(...)
+    application_id: int = Form(...),
+    remarks: Optional[str] = Form(None),
 ) -> ApplicationStatusUpdate:
     return ApplicationStatusUpdate(
         status=status,
-        application_id=application_id
+        application_id=application_id,
+        remarks=remarks,
     )
 
 class OwnerDetail(BaseModel):

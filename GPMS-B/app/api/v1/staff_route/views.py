@@ -89,6 +89,7 @@ class StaffView:
         self, 
         application_id: int, 
         status: str, 
+        remarks: str | None,
         current_user_id: UUID
     ) -> ApplicationStatus:
         """
@@ -125,9 +126,17 @@ class StaffView:
                     detail="Cannot approve yet. Applicant must upload receipt image with OR number and amount."
                 )
 
+        normalized_remarks = (remarks or "").strip()
+        if status == "Rejected" and not normalized_remarks:
+            raise HTTPException(
+                status_code=400,
+                detail="Remarks are required when rejecting an application."
+            )
+
         # Create status update
         new_status = ApplicationStatus(
             status=status,
+            remarks=normalized_remarks or None,
             date=date.today(),
             application_id=application_id,
             processed_by=current_user_id

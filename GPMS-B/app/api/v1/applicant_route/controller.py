@@ -900,6 +900,11 @@ class ApplicantController:
                     "date": app.date.strftime("%Y-%m-%d") if app.date else None,
                     "status": app_status.status if app_status else "Pending",
                     "processed_date": app_status.date.strftime("%Y-%m-%d") if app_status else None,
+                    "rejection_remarks": (
+                        app_status.remarks
+                        if app_status and (app_status.status or "").strip().lower() == "rejected"
+                        else None
+                    ),
                     "vehicle_images": {
                         "front": front_image_url,
                         "back": back_image_url
@@ -1057,6 +1062,11 @@ class ApplicantController:
                 "date": app.date,
                 "building_name": app.building_name,
                 "status": status.status if status else "Pending",
+                "rejection_remarks": (
+                    status.remarks
+                    if status and (status.status or "").strip().lower() == "rejected"
+                    else None
+                ),
                 "slip": slip_payload,
                 "applicant": {
                     "first_name": profile.first_name,

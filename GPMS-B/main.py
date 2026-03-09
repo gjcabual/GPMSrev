@@ -87,6 +87,12 @@ async def init_db():
                 "ADD COLUMN IF NOT EXISTS lock_until TIMESTAMP"
             )
         )
+        await conn.execute(
+            text(
+                "ALTER TABLE application_status_tbl "
+                "ADD COLUMN IF NOT EXISTS remarks VARCHAR(500)"
+            )
+        )
 
 @app.on_event("startup")
 async def startup_event():

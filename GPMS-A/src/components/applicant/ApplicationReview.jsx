@@ -210,6 +210,17 @@ export const ApplicationReview = ({
          {data?.status || "Pending"}
         </span>
        </p>
+       {String(data?.status || "").toLowerCase() === "rejected" &&
+        String(data?.rejection_remarks || "").trim() && (
+         <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-3">
+          <p className="text-xs sm:text-sm font-semibold text-red-700">
+           Rejection Remarks
+          </p>
+          <p className="text-xs sm:text-sm text-red-800 mt-1">
+           {data?.rejection_remarks}
+          </p>
+         </div>
+        )}
        <div className="mt-4 sm:mt-6 md:mt-10 space-y-8 sm:space-y-12 md:space-y-20">
         <PersonalInfo data={data?.applicant} />
         <VehicleInfo data={data?.applicant?.vehicle_information} />

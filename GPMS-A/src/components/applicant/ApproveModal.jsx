@@ -14,6 +14,7 @@ export const ApproveModal = ({
  const [status, setStatus] = useState(initialStatus);
  const [message, setMessage] = useState("");
  const [isSubmitting, setIsSubmitting] = useState(false);
+ const [remarks, setRemarks] = useState("");
 
  // Support both nested (data.applicant.application_id) and flat (data.application_id) shapes
  const applicationId = data?.application_id ?? data?.applicant?.application_id;
@@ -38,13 +39,18 @@ export const ApproveModal = ({
    toast.error("Application ID is missing. Please select an application again.");
    return;
   }
-  if (status === "Approved" && !hasUploadedReceipt) {
-   toast.error("Cannot approve yet. Applicant must upload receipt image, OR number, and amount.");
+ if (status === "Approved" && !hasUploadedReceipt) {
+  toast.error("Cannot approve yet. Applicant must upload receipt image, OR number, and amount.");
+  return;
+ }
+  if (status === "Rejected" && !String(remarks || "").trim()) {
+   toast.error("Remarks are required when rejecting an application.");
    return;
   }
   const formData = new FormData();
   formData.append("status", status);
   formData.append("application_id", String(applicationId));
+  formData.append("remarks", String(remarks || "").trim());
   try {
    setIsSubmitting(true);
    const res = await fetch(buildUrl("/staff/application-status/update"), {
@@ -144,12 +150,23 @@ export const ApproveModal = ({
           {data?.slip?.official_receipt || "N/A"}
          </span>
         </div>
-        <div className="flex items-center gap-2">
+       <div className="flex items-center gap-2">
          <span className="w-24 text-gray-600 font-medium">Amount:</span>
          <span className="flex items-center h-10 px-4 rounded-md bg-slate-100 text-md w-full font-medium text-gray-500">
           {data?.slip?.amount != null ? data.slip.amount : "N/A"}
          </span>
         </div>
+        {status === "Rejected" && (
+         <div className="flex items-start gap-2">
+          <span className="w-24 text-gray-600 font-medium pt-2">Remarks:</span>
+          <textarea
+           value={remarks}
+           onChange={(e) => setRemarks(e.target.value)}
+           className="w-full min-h-[90px] px-3 py-2 rounded-md border border-gray-300 outline-none focus:border-primary text-sm"
+           placeholder="Enter reason for rejection"
+          />
+         </div>
+        )}
        </div>
       </div>
       <div className="flex items-center justify-end gap-2 mt-10">

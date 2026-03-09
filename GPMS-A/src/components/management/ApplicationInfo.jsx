@@ -305,17 +305,18 @@ export const ApplicationInfo = ({ applicationId, close }) => {
             Documents
            </button>
           </div>
-          <button
+          <p
+          type="button"
            onClick={() =>
             handleOpenLogs(
              applicantInfo?.owner?.user_id,
              applicantInfo?.owner?.fullname
             )
            }
-           className="p-4 text-sm text-gray-600 font-medium"
+           className="p-4 text-sm text-gray-600 cursor-pointer font-medium hover:text-primary/80"
           >
            Applicant Logs
-          </button>
+          </p>
          </div>
         </>
        )}
