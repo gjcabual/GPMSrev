@@ -533,7 +533,7 @@ export const Management = () => {
       >
        <option value="All">All Vehicles</option>
        <option value="Truck">Truck</option>
-       <option value="Motorcycle">Motor Cycle</option>
+       <option value="Motorcycle">Motorcycle</option>
        <option value="Car">Car</option>
        <option value="Tricycle">Tricycle</option>
       </select>
@@ -647,13 +647,13 @@ export const Management = () => {
        </div>
 
        <select
-        className="h-9 bg-gray-200 rounded-md outline-none px-4 text-sm"
+        className="h-9 bg-gray-200 rounded-md outline-none px-5 text-sm"
         value={vehicleType}
         onChange={(e) => setVehicleType(e.target.value)}
        >
         <option value="All">All Vehicles</option>
         <option value="Truck">Truck</option>
-        <option value="Motorcycle">Motor Cycle</option>
+        <option value="Motorcycle">Motorcycle</option>
         <option value="Car">Car</option>
         <option value="Tricycle">Tricycle</option>
        </select>
