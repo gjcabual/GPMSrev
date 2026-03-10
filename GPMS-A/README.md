@@ -1,47 +1,65 @@
-# GPMS - Gate Pass Management System
+# GPMS-A - Frontend (React + Vite)
 
-## Overview
-GPMS (Gate Pass Management System) is a web-based application built using React and Vite to streamline and manage gate pass applications efficiently. The system provides role-based access for different users: Applicants, Admins, and Staff.
+Frontend module for CSU GPMS. This app provides applicant, staff, and admin interfaces for gate pass processing.
 
-## Features
-- **Applicant Portal**: Allows users to submit gate pass requests.
-- **Admin Dashboard**: Manages applicants and approvals.
-- **Staff Interface**: Verifies and processes gate passes.
-- **Fast and responsive UI** using React with Tailwind CSS for Applicant Portals.
-- **Role-based Routing** to control access to different sections.
+## Tech Stack
 
-## Technologies Used
-- **Frontend Framework**: React with Vite
-- **Styling**: Tailwind CSS v4
-- **Icons**: React Icons
+- React 19
+- Vite
+- React Router
+- Tailwind CSS
+- React Icons
+- Sonner (toast notifications)
 
-## Installation
-1. Clone the repository:
-   ```bash
-   git clone 
-   ```
-2. Navigate to the project directory:
-   ```bash
-   cd gpms-frontend
-   ```
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-4. Start the development server:
-   ```bash
-   npm run dev
+## Local Setup
 
-## Routes
-| Role      | Route        | Description |
-|-----------|-------------|-------------|
-| Applicant | `/gpms`     | Main entry point for applicants |
-| Admin     | `/admin`    | Admin dashboard |
-| Staff     | `/staff`    | Staff interface |
+```bash
+cd GPMS-A
+npm install
+npm run dev
+```
 
-## Contributing
-Feel free to contribute by submitting pull requests or opening issues.
+Default dev URL: `http://localhost:5173`
 
-## License
-This project is licensed under the MIT License. 
+## Environment
 
+Create `.env` (or copy from `.env.example`) and set:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1
+```
+
+## Build
+
+```bash
+npm run build
+npm run preview
+```
+
+## Main Source Structure
+
+```text
+src/
+|-- components/
+|-- layouts/
+|-- pages/
+|-- routes/
+|-- utils/
+|-- App.jsx
+`-- main.jsx
+```
+
+## Route Groups
+
+- Public/Landing: `/`, `/gpms`
+- Applicant module: `/applicant/*`
+- Staff module: `/staff/*`
+- Admin module: `/admin/*`
+- Auth pages include applicant, staff, and admin login flows.
+
+## Notes
+
+- API base URL is resolved from `VITE_API_BASE_URL`.
+- OCR-related upload/extract requests are sent to backend applicant endpoints.
+
+Last updated: 2026-03-10

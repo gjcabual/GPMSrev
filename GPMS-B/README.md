@@ -1,83 +1,70 @@
-# GPMS-B – Backend (FastAPI)
+# GPMS-B - Backend (FastAPI)
 
-Backend for the Gate Pass Management System. Handles auth (JWT), applicant applications, document extraction (OCR via **pytesseract**), management, staff, admin, and reports.
+Backend module for CSU GPMS. Handles authentication, applications, document processing/OCR, approval workflow, and management reports.
+
+## Tech Stack
+
+- FastAPI
+- SQLAlchemy (async)
+- asyncpg
+- PostgreSQL
+- JWT auth
+- pytesseract OCR utilities
 
 ## Prerequisites
 
-- **Python 3.10+** (3.11 recommended)
-- **PostgreSQL 12+**
-- **Tesseract OCR** – required for document extraction. Install the binary; see [Tesseract for Windows](https://github.com/UB-Mannheim/tesseract/wiki) or your OS package manager.
+- Python 3.10+
+- PostgreSQL 12+
+- Tesseract OCR binary installed and accessible
 
-## Setup
-
-### 1. Clone and enter project
+## Local Setup
 
 ```bash
 cd GPMS-B
-```
-
-### 2. Virtual environment
-
-```bash
 python -m venv .venv
-```
-
-Activate:
-
-- **Windows:** `.venv\Scripts\activate`
-- **macOS/Linux:** `source .venv/bin/activate`
-
-### 3. Install dependencies
-
-```bash
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4. Environment
+## Environment
 
-Copy **.env.example** to **.env** and set:
+Copy `.env.example` to `.env` and configure:
 
-- **Database:** `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` (database name used by seed: `gpmsdb`)
-- **Optional:** `TESSERACT_CONFIG` for Tesseract (e.g. `--psm 6`)
-- **Optional (email):** `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT` for OTP, password reset, staff invite
+- Database: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- Optional email: `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`
+- Optional OCR config: `TESSERACT_CONFIG`
 
-### 5. Database
-
-1. Create the database:
-
-   ```sql
-   CREATE DATABASE gpmsdb;
-   ```
-
-2. Start the app once so tables are created:
-
-   ```bash
-   uvicorn main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-3. Seed initial data (admin, staff, applicant):
-
-   ```bash
-   python -m app.utils.seed_db --action seed
-   ```
-
-### 6. Run
+## Run API
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- API: http://127.0.0.1:8000  
-- Docs: http://127.0.0.1:8000/docs  
+- API root: `http://127.0.0.1:8000`
+- OpenAPI docs: `http://127.0.0.1:8000/docs`
 
-## OCR (document extraction)
-
-- **Technology:** **pytesseract** (Tesseract binary must be installed and on PATH).
-- **Usage:** `extract_document_data()` in `app/utils/document_ocr_utils.py` uses `app/utils/tesseract_ocr_utils.py` for OR, CR, and DL.
-- **Test script:** `python scripts/test_openrouter.py [image_path] [OR|CR|DL]`
-
-## Deactivate venv
+## Optional Seed Data
 
 ```bash
-deactivate
+python -m app.utils.seed_db --action seed
 ```
+
+## Main Source Structure
+
+```text
+app/
+|-- api/v1/
+|-- core/
+|-- db/
+|-- schemas/
+|-- services/
+|-- utils/
+`-- routes/
+```
+
+## OCR Notes
+
+- OCR extraction is implemented in `app/utils/document_ocr_utils.py` and related helpers.
+- Input document types include OR, CR, and DL.
+
+Last updated: 2026-03-10
