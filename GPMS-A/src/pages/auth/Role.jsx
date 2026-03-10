@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export const Role = () => {
- const [role, setRole] = useState("admin");
+ const [role, setRole] = useState("applicant");
  const nav = useNavigate();
 
  const handleNav = () => {

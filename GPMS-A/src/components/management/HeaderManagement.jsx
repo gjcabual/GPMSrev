@@ -4,6 +4,7 @@ import { ApproveModal } from "../applicant/ApproveModal";
 import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { IoClose } from "react-icons/io5";
 import React from "react";
+import { toast } from "sonner";
 
 // Image display component that fetches image from backend
 const ImageDisplay = React.memo(
@@ -120,7 +121,20 @@ export const HeaderManagement = ({
  const [currentIndex, setCurrentIndex] = useState(0);
  const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
 
+ const hasUploadedReceipt = Boolean(
+   selectData?.has_uploaded_receipt ||
+    selectData?.slip?.image ||
+    (String(selectData?.slip?.official_receipt || "").trim() &&
+     Number(selectData?.slip?.amount) > 0)
+  );
+ const approveDisabledReason =
+  "Applicant must upload receipt image and provide valid OR number and amount before approval.";
+
  const handleApprove = async (status) => {
+  if (status === "Approved" && !hasUploadedReceipt) {
+   toast.info(approveDisabledReason);
+   return;
+  }
   setStatus(status);
   setApproveModal(true);
  };
@@ -162,12 +176,12 @@ export const HeaderManagement = ({
 
  // Memoize the document images section
  const documentImagesSection = useMemo(
-  () => (
-   <div className="relative h-[200px] w-full">
+   () => (
+    <div className="relative h-[170px] w-full">
     {/* Add slip image if it exists */}
     {selectData?.slip?.image && (
      <div
-      className="absolute w-[150px] h-[230px] bg-gray-200 rounded-md overflow-hidden cursor-pointer shadow-md transition-transform hover:translate-y-[-8px] hover:shadow-lg"
+       className="absolute w-[120px] h-[185px] bg-gray-200 rounded-md overflow-hidden cursor-pointer shadow-md transition-transform hover:translate-y-[-8px] hover:shadow-lg"
       style={{
        left: "0px",
        top: "0px",
@@ -207,10 +221,10 @@ export const HeaderManagement = ({
       return (
        <div
         key={doc.document_id}
-        className={`absolute w-[150px] h-[230px] bg-gray-200 rounded-md overflow-hidden cursor-pointer shadow-md transition-transform hover:translate-y-[-8px] hover:shadow-lg`}
+         className={`absolute w-[120px] h-[185px] bg-gray-200 rounded-md overflow-hidden cursor-pointer shadow-md transition-transform hover:translate-y-[-8px] hover:shadow-lg`}
         style={{
-         left: `${documentIndex * 20}px`,
-         top: `${documentIndex * 10}px`,
+          left: `${documentIndex * 14}px`,
+          top: `${documentIndex * 7}px`,
          zIndex: selectData.documents.length - index,
         }}
         onClick={() => {
@@ -242,16 +256,16 @@ export const HeaderManagement = ({
 
  // Memoize the vehicle images section
  const vehicleImagesSection = useMemo(
-  () => (
-   <div className="relative w-[340px] h-[240px]">
+   () => (
+    <div className="relative w-[260px] h-[185px]">
     {selectData?.applicant?.vehicle && (
      <>
       {/* Back image (bottom) */}
       <div
-       className="absolute w-[280px] h-[180px] rounded-md overflow-hidden cursor-pointer shadow-md transition-transform hover:translate-y-[-8px] hover:shadow-lg border border-gray-200"
+        className="absolute w-[215px] h-[135px] rounded-md overflow-hidden cursor-pointer shadow-md transition-transform hover:translate-y-[-8px] hover:shadow-lg border border-gray-200"
        style={{
-        left: "30px",
-        top: "40px",
+         left: "20px",
+         top: "28px",
         zIndex: 1,
        }}
        onClick={() => {
@@ -277,7 +291,7 @@ export const HeaderManagement = ({
 
       {/* Front image (top) */}
       <div
-       className="absolute w-[280px] h-[180px] rounded-md overflow-hidden cursor-pointer shadow-md transition-transform hover:translate-y-[-8px] hover:shadow-lg border border-gray-200"
+        className="absolute w-[215px] h-[135px] rounded-md overflow-hidden cursor-pointer shadow-md transition-transform hover:translate-y-[-8px] hover:shadow-lg border border-gray-200"
        style={{
         left: "0px",
         top: "0px",
@@ -348,9 +362,9 @@ export const HeaderManagement = ({
     // Existing content when application data is available
     <div className="flex flex-col items-start justify-start">
      {/* Main Content Row */}
-     <div className="w-full flex items-start justify-between gap-8">
-      {/* Left Section - Profile Picture & Role */}
-      <div className="flex flex-col items-center">
+      <div className="w-full flex flex-nowrap items-start justify-between gap-4 overflow-x-auto pb-2">
+       {/* Left Section - Profile Picture & Role */}
+       <div className="flex flex-col items-center w-48 shrink-0">
        {profileImageSection}
        <div className="mt-2 text-center">
         <h1 className="text-gray-600 font-medium">Application Role:</h1>
@@ -363,11 +377,11 @@ export const HeaderManagement = ({
       </div>
 
       {/* Middle Left - Applicant Details */}
-      <div className="flex flex-col gap-2">
+       <div className="flex flex-col gap-2 w-[360px] shrink-0">
        <h3 className="text-lg font-semibold mb-4">Information</h3>
-       <div className="w-full flex items-center">
-        <span className="w-24 text-gray-600 font-medium">Name:</span>
-        <span className="text-xl font-semibold text-gray-800 h-10 bg-slate-200/60 rounded-md px-4 flex w-full items-center">
+        <div className="w-full flex items-center">
+         <span className="w-24 text-gray-600 font-medium">Name:</span>
+         <span className="text-xl font-semibold text-gray-800 h-10 bg-slate-200/60 rounded-md px-4 flex w-full items-center truncate">
          {selectData && selectData.applicant
           ? selectData.applicant.name
           : "N/A"}
@@ -400,11 +414,41 @@ export const HeaderManagement = ({
           ? selectData.applicant.vehicle.sticker.sticker_id
           : "##-####"}
         </span>
+        </div>
+          <div className="mt-2 p-3 rounded-md border border-gray-200 bg-white min-h-[112px]">
+          <div className="flex items-center justify-between gap-2">
+           <span className="text-gray-700 font-medium flex-1 pr-2">
+            Payment Receipt
+           </span>
+           <span
+            className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap shrink-0 ${
+             hasUploadedReceipt
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-amber-100 text-amber-700"
+            }`}
+           >
+           {hasUploadedReceipt ? "Uploaded" : "Not Uploaded"}
+          </span>
+         </div>
+          <div className="mt-2 text-sm text-gray-600 space-y-1">
+           <p className="flex items-center gap-1">
+            OR Number:{" "}
+            <span className="font-medium text-gray-800 truncate">
+             {selectData?.slip?.official_receipt || "N/A"}
+            </span>
+           </p>
+           <p className="flex items-center gap-1">
+            Amount:{" "}
+            <span className="font-medium text-gray-800">
+             {selectData?.slip?.amount != null ? selectData.slip.amount : "N/A"}
+           </span>
+          </p>
+         </div>
+        </div>
        </div>
-      </div>
 
       {/* Middle Right - Documents */}
-      <div className="flex flex-col gap-2">
+       <div className="flex flex-col gap-2 w-[260px] shrink-0">
        <div className="mb-4">
         <h3 className="text-lg font-semibold mb-4">Documents</h3>
         {documentImagesSection}
@@ -412,29 +456,35 @@ export const HeaderManagement = ({
       </div>
 
       {/* Right Section - Vehicle Images */}
-      <div className="flex-shrink-0">
+       <div className="w-[260px] shrink-0">
        <h3 className="text-lg font-semibold mb-4">Vehicle Images</h3>
        {vehicleImagesSection}
       </div>
      </div>
 
      {/* Conditionally Render Action Buttons only if there are applications */}
-     {showButtons && hasApplications && (
-      <div className="flex items-center gap-5">
-       <button
-        onClick={() => handleApprove("Approved")}
-        className="h-10 px-4 rounded-md text-white font-medium bg-green-500 cursor-pointer"
-       >
-        Approve
-       </button>
-       <button
-        onClick={() => handleApprove("Rejected")}
-        className="h-10 px-4 rounded-md text-white font-medium bg-red-500"
-       >
-        Reject
-       </button>
-      </div>
-     )}
+      {showButtons && hasApplications && (
+       <div className="flex items-center gap-5">
+        <button
+         onClick={() => handleApprove("Approved")}
+         disabled={!hasUploadedReceipt}
+         title={!hasUploadedReceipt ? approveDisabledReason : "Approve application"}
+         className={`h-10 px-4 rounded-md text-white font-medium transition-all duration-200 ${
+          hasUploadedReceipt
+           ? "bg-green-500 cursor-pointer hover:bg-green-600 hover:shadow-md hover:-translate-y-0.5"
+           : "bg-green-300 cursor-not-allowed opacity-80"
+         }`}
+        >
+         Approve
+        </button>
+        <button
+         onClick={() => handleApprove("Rejected")}
+         className="h-10 px-4 rounded-md text-white font-medium bg-red-500 transition-all duration-200 hover:bg-red-600 hover:shadow-md hover:-translate-y-0.5"
+        >
+         Reject
+        </button>
+       </div>
+      )}
      {approveModal && (
       <ApproveModal
        data={selectData}

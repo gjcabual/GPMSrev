@@ -23,6 +23,7 @@ from app.schemas.dashboard import (
 class DashboardController:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.pending_like_statuses = ("Pending", "Waiting for approval")
 
     async def get_application_status_counts(self) -> ApplicationStatusCounts:
         try:
@@ -56,7 +57,10 @@ class DashboardController:
             status_counts_dict = {
                 'total_approved': next((count for status, count in status_counts if status == 'Approved'), 0),
                 'total_rejected': next((count for status, count in status_counts if status == 'Rejected'), 0),
-                'total_pending': next((count for status, count in status_counts if status == 'Pending'), 0)
+                'total_pending': sum(
+                    count for status, count in status_counts
+                    if status in self.pending_like_statuses
+                )
             }
             return ApplicationStatusCounts(**status_counts_dict)
         except Exception as e:
@@ -141,6 +145,19 @@ class DashboardController:
                 ).subquery()
             )
 
+            # Latest batch price per sticker type/role.
+            # Used for pending-like applications that may not yet have an assigned sticker record.
+            latest_batch_by_type = (
+                select(
+                    BatchStickerSessions.type.label("type"),
+                    BatchStickerSessions.price.label("price"),
+                    func.row_number().over(
+                        partition_by=BatchStickerSessions.type,
+                        order_by=[BatchStickerSessions.created_at.desc(), BatchStickerSessions.batch_id.desc()]
+                    ).label("rn")
+                ).subquery()
+            )
+
             # Approved charges query - starting from Application to avoid duplicate counting
             approved_stmt = (
                 select(func.sum(BatchStickerSessions.price))
@@ -160,18 +177,24 @@ class DashboardController:
             approved_result = await self.db.execute(approved_stmt)
             approved_total = approved_result.scalar() or 0
 
-            # Pending charges query - similar approach as approved
+            # Pending charges query - compute by application role/type to reflect expected payment
+            # even before sticker allocation (e.g., Waiting for approval).
             pending_stmt = (
-                select(func.sum(BatchStickerSessions.price))
+                select(func.sum(latest_batch_by_type.c.price))
                 .select_from(Application)
-                .join(Sticker, Application.sticker_id == Sticker.id)
-                .join(BatchStickerSessions, Sticker.batch_id == BatchStickerSessions.batch_id)
                 .join(
                     latest_status,
                     and_(
                         Application.application_id == latest_status.c.application_id,
                         latest_status.c.rn == 1,
-                        latest_status.c.status == 'Pending'
+                        latest_status.c.status.in_(self.pending_like_statuses)
+                    )
+                )
+                .join(
+                    latest_batch_by_type,
+                    and_(
+                        latest_batch_by_type.c.type == Application.role,
+                        latest_batch_by_type.c.rn == 1
                     )
                 )
             )
@@ -326,7 +349,7 @@ class DashboardController:
                 .subquery()
             )
 
-            # Get applications with latest status "Pending"
+            # Get applications with latest status pending-like (Pending / Waiting for approval)
             pending_applications = (
                 select(
                     Application.application_id,
@@ -345,7 +368,7 @@ class DashboardController:
                 )
                 .join(Application, ApplicationStatus.application_id == Application.application_id)
                 .join(Vehicle, Application.plate_no == Vehicle.plate_no)
-                .where(ApplicationStatus.status == 'Pending')
+                .where(ApplicationStatus.status.in_(self.pending_like_statuses))
             )
 
             # Add vehicle type filter if specified

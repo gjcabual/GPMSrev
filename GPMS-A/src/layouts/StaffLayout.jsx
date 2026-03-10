@@ -17,7 +17,7 @@ export const StaffLayout = ({ children }) => {
       isSidebarOpen={isSidebarOpen}
       setIsSidebarOpen={setIsSidebarOpen}
      />
-     <div className="m-4 md:m-[30px] flex-1 overflow-auto">{children}</div>
+     <div className="m-4 md:m-[30px] flex-1 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{children}</div>
     </div>
    </div>
   </>

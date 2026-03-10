@@ -1,0 +1,6 @@
+# Windows reserved device names (cannot be added to Git on Windows)
+nul
+NUL
+
+# Crash dumps
+*.stackdump

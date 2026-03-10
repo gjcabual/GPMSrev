@@ -8,6 +8,7 @@ class ApplicationStatus(Base):
 
     status_id = Column(Integer, primary_key=True, index=True)
     status = Column(String(255), nullable=False)
+    remarks = Column(String(500), nullable=True)
     date = Column(Date, nullable=False)
     application_id = Column(Integer, ForeignKey("applications_tbl.application_id"), nullable=False)
     processed_by = Column(UUID(as_uuid=True), ForeignKey("users_tbl.user_id"), nullable=True)

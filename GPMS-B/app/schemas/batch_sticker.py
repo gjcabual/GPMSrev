@@ -38,6 +38,7 @@ class BatchStickerCreate(BaseModel):
 
 class BatchStickerCreateRequest(BaseModel):
     batches: List[BatchStickerCreate] = Field(..., min_items=1)
+    batch_name: str = Field(..., min_length=1, max_length=100)
     
     @validator('batches')
     def validate_batch_ranges(cls, batches):
@@ -80,6 +81,7 @@ class BatchStickerCreateRequest(BaseModel):
 class BatchStickerResponse(BaseModel):
     batch_id: int
     type: str
+    batch_name: Optional[str] = None
     start_at: int
     end_at: int
     price: int
@@ -93,6 +95,7 @@ class BatchStickersCreateResponse(BaseModel):
 class BatchStickerForm:
     def __init__(
         self,
+        batch_name: str = Form(..., description="Batch sticker name"),
         student_start_at: str = Form(None, description="Student sticker start number"),
         student_end_at: str = Form(None, description="Student sticker end number"),
         employee_start_at: str = Form(None, description="Employee sticker start number"),
@@ -103,6 +106,17 @@ class BatchStickerForm:
         concessionaire_end_at: str = Form(None, description="Concessionaire sticker end number")
     ):
         try:
+            self.batch_name = batch_name.strip() if batch_name else ""
+            if not self.batch_name:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "Validation Error",
+                        "message": "Batch name is required",
+                        "field": "batch_name"
+                    }
+                )
+
             # Convert string inputs to integers or None
             self.student_start_at = int(student_start_at) if student_start_at and student_start_at.strip() else None
             self.student_end_at = int(student_end_at) if student_end_at and student_end_at.strip() else None
@@ -261,7 +275,7 @@ class BatchStickerForm:
                 }
             )
         
-        return BatchStickerCreateRequest(batches=batches)
+        return BatchStickerCreateRequest(batches=batches, batch_name=self.batch_name)
 
 # Add these new response classes to your existing file
 
@@ -273,6 +287,7 @@ class StickerRange(BaseModel):
 
 class BatchStickerGroup(BaseModel):
     batch_no: int
+    batch_name: Optional[str] = None
     created_at: date  # This expects date only
     student: Optional[StickerRange] = None
     employee: Optional[StickerRange] = None

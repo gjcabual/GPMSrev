@@ -305,17 +305,18 @@ export const ApplicationInfo = ({ applicationId, close }) => {
             Documents
            </button>
           </div>
-          <button
+          <p
+          type="button"
            onClick={() =>
             handleOpenLogs(
              applicantInfo?.owner?.user_id,
              applicantInfo?.owner?.fullname
             )
            }
-           className="p-4 text-sm text-gray-600 font-medium"
+           className="p-4 text-sm text-gray-600 cursor-pointer font-medium hover:text-primary/80"
           >
            Applicant Logs
-          </button>
+          </p>
          </div>
         </>
        )}
@@ -358,9 +359,6 @@ export const ApplicationInfo = ({ applicationId, close }) => {
                 {selectedDriver.document.type}
                </p>
                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>
-                 Registered: {selectedDriver.document.registered_at || "N/A"}
-                </span>
                 <span>
                  Expires: {selectedDriver.document.expire_at || "N/A"}
                 </span>
@@ -655,7 +653,7 @@ const Document = ({ applicantInfo, onImageClick }) => {
     <h1 className="text-lg font-medium text-primary">Documents</h1>
     <div className="mt-3 space-y-3">
      {applicantInfo?.vehicle?.documents?.map((doc, index) => (
-      <div key={index} className="p-2 border border-gray-200 rounded-md">
+     <div key={index} className="p-2 border border-gray-200 rounded-md">
        <div className="flex items-center gap-3">
         {doc.image && (
          <div className="w-[60px] h-[60px] cursor-pointer">
@@ -681,8 +679,14 @@ const Document = ({ applicantInfo, onImageClick }) => {
         <div className="flex-1">
          <p className="text-sm font-medium">{doc.type}</p>
          <div className="flex justify-between text-xs text-gray-500 mt-1">
-          <span>Registered: {doc.registered_at || "N/A"}</span>
-          <span>Expires: {doc.expire_at || "N/A"}</span>
+          {doc.type !== "Driver's License" ? (
+           <span>Registered: {doc.registered_at || "N/A"}</span>
+          ) : (
+           <span />
+          )}
+          <span>
+           Expires: {doc.type === "Certificate of Registration" ? "N/A" : (doc.expire_at || "N/A")}
+          </span>
          </div>
         </div>
        </div>

@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status, Form, F
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from app.db.models.document import Document
+from app.db.models.slip import Slip
 from app.db.models.vehicle import Vehicle
 from app.db.models.profile import Profile
+from app.db.models.user import User
 from typing import List, Optional
 from datetime import date, datetime, timedelta
 import logging
@@ -22,16 +24,29 @@ from .views import ApplicantView
 from app.schemas.user import UserInDB
 from fastapi.exceptions import RequestValidationError
 from fastapi import Request
-import sys
 import os
-from app.core.ocr_doc_validator import validate_document
-from app.utils.document_ocr_utils import document_type, extract_document_data
+import sys
+import tempfile
+from app.utils.document_ocr_utils import extract_document_data
 from app.schemas.profile import ProfileUpdate, SuccessResponse
 from app.utils.email import send_verification_email
 from app.db.repositories.token import create_verification_token, get_valid_verification_token, delete_used_token
-from .controller import ApplicantController  # Add this
+from .controller import ApplicantController
 
-# Add this helper function at the top of the file
+from app.utils.document_ocr_utils import document_type
+from app.core.ocr_doc_validator import validate_document
+from app.utils.tesseract_ocr_utils import get_text_from_image
+import re
+
+
+def _safe_unlink(path: Optional[str]) -> None:
+    if path and os.path.isfile(path):
+        try:
+            os.unlink(path)
+        except OSError as e:
+            logger.warning("Could not remove temporary file %s: %s", path, e)
+
+
 def get_full_document_type(doc_type: str) -> str:
     """Convert document type abbreviation to full name"""
     doc_types = {
@@ -55,6 +70,55 @@ def _normalize_file_number(s: Optional[str]) -> str:
     if not s or not isinstance(s, str):
         return (s or "").strip()
     return s.replace(" ", "").replace("-", "").replace("—", "").replace("–", "").strip()
+
+
+def _extract_or_number_from_text(text: str) -> Optional[str]:
+    if not text:
+        return None
+
+    patterns = [
+        r"(?i)(?:official\s*receipt|o\.?\s*r\.?)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Z0-9\-]{5,25})",
+        r"(?i)\bOR\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Z0-9\-]{5,25})",
+        r"\b\d{4}-\d{12}\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1) if match.lastindex else match.group(0)
+
+    fallback = re.search(r"\b\d{7,16}\b", text)
+    return fallback.group(0) if fallback else None
+
+
+def _extract_amount_from_text(text: str) -> Optional[float]:
+    if not text:
+        return None
+
+    primary_patterns = [
+        r"(?i)(?:total\s*(?:amount)?\s*(?:paid|due)?|amount\s*paid|grand\s*total)\s*[:\-]?\s*(?:PHP|P|₱)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
+        r"(?i)(?:PHP|P|₱)\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
+    ]
+
+    for pattern in primary_patterns:
+        match = re.search(pattern, text)
+        if match:
+            try:
+                return float(match.group(1).replace(",", ""))
+            except ValueError:
+                pass
+
+    all_amounts = re.findall(r"\b([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})|[0-9]+(?:\.[0-9]{1,2}))\b", text)
+    numeric_amounts = []
+    for raw in all_amounts:
+        try:
+            value = float(raw.replace(",", ""))
+            if value > 0:
+                numeric_amounts.append(value)
+        except ValueError:
+            continue
+
+    return max(numeric_amounts) if numeric_amounts else None
 
 
 @router.post("/application/extract")
@@ -86,51 +150,38 @@ async def extract_document_details(
     validation_results = []
     try:
         for doc_type, doc_file in zip(doc_types_list, doc_files):
-            temp_path = f"temp_extract_{doc_type}_{doc_file.filename}"
             content = await doc_file.read()
             await doc_file.seek(0)
-            with open(temp_path, "wb") as buffer:
-                buffer.write(content)
-
-            reference_path = document_type(doc_type)
-            result = None
-            # OR/CR: validated by file number only (OR file no. / MV file no.); plate not matched (may be temporary).
-            # DL: validate against applicant details from step 1 (name, birth date from profile).
-            if reference_path:
-                try:
-                    validation_array = []
-                    if doc_type == "DL":
-                        # DL must match applicant details from step 1 (profile)
-                        validation_array = [
-                            user_profile.first_name,
-                            user_profile.last_name,
-                            user_profile.birth_date.strftime("%Y/%m/%d") if user_profile.birth_date else ""
-                        ]
-                    elif doc_type in ("OR", "CR"):
-                        # OR/CR: match file number only (no plate)
-                        validation_array = []
-                    result = validate_document(
-                        reference_path, temp_path, validation_array,
-                        doc_type=doc_type, show_results=False, save_results=False
-                    )
-                except Exception as e:
-                    logger.warning("validate_document failed for %s, falling back to OCR-only: %s", doc_type, e)
-                    result = None
-            if result is None:
-                result = extract_document_data(temp_path, doc_type)
-            validation_results.append({"type": doc_type, "result": result, "temp_path": temp_path})
+            suffix = os.path.splitext(doc_file.filename or "")[1] or ".bin"
+            with tempfile.NamedTemporaryFile(delete=False, prefix="gpms_extract_", suffix=suffix) as f:
+                f.write(content)
+                temp_path = f.name
             try:
-                os.remove(temp_path)
-            except Exception:
-                pass
+                result = extract_document_data(temp_path, doc_type)
+                validation_results.append({"type": doc_type, "result": result, "temp_path": temp_path})
+            finally:
+                _safe_unlink(temp_path)
 
-        response = {"OR": {"file_number": None, "expiration_date": None}, "CR": {"file_number": None}, "DL": {"expiration_date": None}}
+        response = {
+            "OR": {"file_number": None, "registration_date": None, "expiration_date": None},
+            "CR": {"file_number": None},
+            "DL": {"expiration_date": None, "name": None, "license_number": None},
+        }
         for v in validation_results:
             r = v["result"]
             dt = v["type"]
             if dt == "OR":
                 response["OR"]["file_number"] = r.get("file_number")
-                exp = r.get("dates", {}).get("expiration_date")
+                dates = r.get("dates", {}) or {}
+                reg = dates.get("document_date")
+                if reg:
+                    try:
+                        s = str(reg)
+                        d = datetime.strptime(s, "%Y/%m/%d") if "/" in s else datetime.strptime(s, "%Y-%m-%d")
+                        response["OR"]["registration_date"] = d.strftime("%m/%d/%Y")
+                    except Exception:
+                        response["OR"]["registration_date"] = str(reg)
+                exp = dates.get("expiration_date")
                 if exp:
                     try:
                         s = str(exp)
@@ -150,16 +201,87 @@ async def extract_document_details(
             elif dt == "DL":
                 exp = r.get("dates", {}).get("expiration_date")
                 response["DL"]["expiration_date"] = exp
+                response["DL"]["name"] = r.get("name")
+                response["DL"]["license_number"] = r.get("license_no")
         return response
     except Exception as e:
         for v in validation_results:
-            tp = v.get("temp_path") if isinstance(v, dict) else None
-            if tp and os.path.exists(tp):
-                try:
-                    os.remove(tp)
-                except Exception:
-                    pass
+            _safe_unlink(v.get("temp_path") if isinstance(v, dict) else None)
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/application/extract-one")
+async def extract_one_document(
+    doc_type: str = Form(...),
+    doc_file: UploadFile = File(...),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """
+    Extract OCR data from a single document (OR, CR, or DL). No validation.
+    Returns file_number and/or expiration_date per document type.
+    """
+    doc_type = doc_type.strip().upper()
+    if doc_type not in {"OR", "CR", "DL"}:
+        raise HTTPException(status_code=400, detail="Invalid document type. Use OR, CR, or DL.")
+    temp_path = None
+    try:
+        def _fmt_to_mmddyyyy(value):
+            if value is None:
+                return None
+            s = str(value).strip()
+            if not s:
+                return None
+            for fmt in ("%Y/%m/%d", "%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y"):
+                try:
+                    d = datetime.strptime(s, fmt)
+                    return d.strftime("%m/%d/%Y")
+                except ValueError:
+                    continue
+            # Keep original if already OCR-provided but not matching known formats.
+            return s
+
+        content = await doc_file.read()
+        await doc_file.seek(0)
+        suffix = os.path.splitext(doc_file.filename or "")[1] or ".bin"
+        with tempfile.NamedTemporaryFile(delete=False, prefix="gpms_extract_one_", suffix=suffix) as f:
+            f.write(content)
+            temp_path = f.name
+        result = extract_document_data(temp_path, doc_type)
+        response = {"file_number": None, "expiration_date": None}
+        if doc_type == "OR":
+            response["file_number"] = result.get("file_number")
+            dates = result.get("dates", {}) or {}
+            response["expiration_date"] = _fmt_to_mmddyyyy(dates.get("expiration_date"))
+            response["registration_date"] = _fmt_to_mmddyyyy(dates.get("document_date"))
+        elif doc_type == "CR":
+            def _str(v):
+                return str(v).strip() if v is not None else ""
+            response["file_number"] = result.get("file_number") or ""
+            dates = result.get("dates") or {}
+            response["date"] = _str(dates.get("document_date") or dates.get("expiration_date"))
+            response["owner_name"] = _str(result.get("owner_name"))
+            response["owner_address"] = _str(result.get("owner_address"))
+            response["engine_no"] = _str(result.get("engine_no"))
+            response["chassis_no"] = _str(result.get("chassis_no"))
+            response["plate_number"] = _str(result.get("plate_number"))
+            response["make"] = _str(result.get("make"))
+            response["year_model"] = _str(result.get("year_model"))
+            response["body_type"] = _str(result.get("body_type"))
+            response["piston_displacement"] = _str(result.get("piston_displacement"))
+        elif doc_type == "DL":
+            exp = result.get("dates", {}).get("expiration_date")
+            if exp:
+                response["expiration_date"] = str(exp)
+            birth = result.get("dates", {}).get("birth_date")
+            if birth:
+                response["birth_date"] = str(birth)
+            response["name"] = (str(result.get("name")).strip() if result.get("name") else "")
+            response["license_number"] = (
+                str(result.get("license_no")).strip() if result.get("license_no") else ""
+            )
+        return response
+    finally:
+        _safe_unlink(temp_path)
 
 
 @router.post("/application")
@@ -174,8 +296,19 @@ async def create_application(
     driver_ids: str = Form(None),
     confirmed_or_file_number: str = Form(None),
     confirmed_cr_file_number: str = Form(None),
+    confirmed_or_registered: str = Form(None),
+    confirmed_cr_registered: str = Form(None),
     confirmed_or_expiration: str = Form(None),
     confirmed_dl_expiration: str = Form(None),
+    use_account_details_as_applicant: str = Form("true"),
+    first_name: str = Form(None),
+    last_name: str = Form(None),
+    email: str = Form(None),
+    contact_no: str = Form(None),
+    date_of_birth: str = Form(None),
+    gender: str = Form(None),
+    sex: str = Form(None),
+    address: str = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: UserInDB = Depends(get_current_applicant)
 ):
@@ -190,6 +323,54 @@ async def create_application(
                 status_code=404,
                 detail="User profile not found"
             )
+
+        use_account_details = str(use_account_details_as_applicant).strip().lower() not in ("false", "0", "no")
+        manual_gender = (gender or sex or "").strip()
+
+        if not use_account_details:
+            missing_owner_fields = []
+            if not (first_name or "").strip():
+                missing_owner_fields.append("first_name")
+            if not (last_name or "").strip():
+                missing_owner_fields.append("last_name")
+            if not (email or "").strip():
+                missing_owner_fields.append("email")
+            if not (contact_no or "").strip():
+                missing_owner_fields.append("contact_no")
+            if not (address or "").strip():
+                missing_owner_fields.append("address")
+            if not (date_of_birth or "").strip():
+                missing_owner_fields.append("date_of_birth")
+            if not manual_gender:
+                missing_owner_fields.append("gender")
+
+            if missing_owner_fields:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Missing required applicant fields: {', '.join(missing_owner_fields)}"
+                )
+
+            try:
+                parsed_birth_date = datetime.strptime(date_of_birth.strip(), "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid date_of_birth format. Use YYYY-MM-DD."
+                )
+
+            user_profile.first_name = first_name.strip()
+            user_profile.last_name = last_name.strip()
+            user_profile.contact_no = contact_no.strip()
+            user_profile.birth_date = parsed_birth_date
+            user_profile.sex = manual_gender.upper()
+            user_profile.address = address.strip()
+
+            if current_user.email != email.strip():
+                user_query = select(User).where(User.user_id == current_user.user_id)
+                user_result = await db.execute(user_query)
+                user = user_result.scalar_one_or_none()
+                if user:
+                    user.email = email.strip()
 
         # Get vehicle data
         vehicle_query = select(Vehicle).where(Vehicle.plate_no == plate_no)
@@ -226,116 +407,36 @@ async def create_application(
         use_confirmed = all([
             confirmed_or_file_number and confirmed_or_file_number.strip(),
             confirmed_cr_file_number and confirmed_cr_file_number.strip(),
+            confirmed_or_registered and confirmed_or_registered.strip(),
+            confirmed_cr_registered and confirmed_cr_registered.strip(),
             confirmed_or_expiration and confirmed_or_expiration.strip(),
             confirmed_dl_expiration and confirmed_dl_expiration.strip(),
         ])
+
+        if not use_confirmed:
+            raise HTTPException(
+                status_code=400,
+                detail="Please complete and confirm document details in Step 4 before submitting."
+            )
+
+        document_match = (_normalize_file_number(confirmed_or_file_number) ==
+                         _normalize_file_number(confirmed_cr_file_number))
+        if not document_match:
+            raise HTTPException(
+                status_code=400,
+                detail="OR and CR file numbers do not match. Please correct the values."
+            )
 
         validation_results = []
         for doc_type, doc_file in zip(doc_types_list, doc_files):
             content = await doc_file.read()
             await doc_file.seek(0)
-
-            if use_confirmed:
-                validation_results.append({
-                    "type": doc_type,
-                    "result": {"dates": {"expiration_date": None}},
-                    "content": content,
-                    "temp_path": None
-                })
-            else:
-                temp_path = f"temp_{doc_type}_{doc_file.filename}"
-                with open(temp_path, "wb") as buffer:
-                    buffer.write(content)
-
-                reference_path = document_type(doc_type)
-                if not reference_path:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Reference document not found for type: {doc_type}"
-                    )
-
-                # OR/CR: validate by file number only (no plate). DL: validate against applicant details (step 1 profile).
-                validation_array = []
-                if doc_type == "DL":
-                    validation_array = [
-                        user_profile.first_name,
-                        user_profile.last_name,
-                        user_profile.birth_date.strftime("%Y/%m/%d")
-                    ]
-                elif doc_type in ("OR", "CR"):
-                    validation_array = []  # file number only; plate not matched
-
-                validation_result = validate_document(
-                    reference_path, temp_path, validation_array,
-                    doc_type=doc_type, show_results=True, save_results=True
-                )
-                validation_results.append({
-                    "type": doc_type,
-                    "result": validation_result,
-                    "content": content,
-                    "temp_path": temp_path
-                })
-
-        if use_confirmed:
-            document_match = (_normalize_file_number(confirmed_or_file_number) ==
-                             _normalize_file_number(confirmed_cr_file_number))
-            if not document_match:
-                for v in validation_results:
-                    tp = v.get("temp_path")
-                    if tp and os.path.exists(tp):
-                        try:
-                            os.remove(tp)
-                        except Exception:
-                            pass
-                raise HTTPException(
-                    status_code=400,
-                    detail="OR and CR file numbers do not match. Please correct the values."
-                )
-        else:
-            all_docs_valid = all(v["result"]["is_valid"] for v in validation_results)
-            or_file_number = None
-            cr_file_number = None
-            document_match = False
-            for v in validation_results:
-                if v["type"] == "OR":
-                    or_file_number = v["result"].get("file_number")
-                elif v["type"] == "CR":
-                    cr_file_number = v["result"].get("file_number")
-            if or_file_number and cr_file_number:
-                document_match = or_file_number == cr_file_number
-            if not all_docs_valid or not document_match:
-                for v in validation_results:
-                    try:
-                        if os.path.exists(v["temp_path"]):
-                            os.remove(v["temp_path"])
-                    except Exception as e:
-                        print(f"Warning: Could not remove temporary file {v['temp_path']}: {e}")
-                detail = {
-                    "message": "Document validation failed",
-                    "validation_errors": [
-                        {
-                            "type": v["type"],
-                            "valid": v["result"]["is_valid"],
-                            "errors": {
-                                "image": not v["result"]["image_valid"],
-                                "text": not v["result"]["text_valid"],
-                                "expiration": not v["result"]["date_valid"],
-                                "message": v["result"].get("date_message", ""),
-                                "file_number": v["result"].get("file_number")
-                            }
-                        } for v in validation_results
-                    ],
-                    "document_match": document_match
-                }
-                if or_file_number is not None or cr_file_number is not None:
-                    detail["or_file_number"] = or_file_number
-                    detail["cr_file_number"] = cr_file_number
-                    detail["match_hint"] = (
-                        "OR and CR file numbers match" if document_match
-                        else "OR and CR file numbers do not match" if (or_file_number and cr_file_number)
-                        else "File number not extracted from one or both documents"
-                    )
-                raise HTTPException(status_code=422, detail=detail)
+            validation_results.append({
+                "type": doc_type,
+                "result": {"dates": {"expiration_date": None}},
+                "content": content,
+                "temp_path": None
+            })
 
         # Convert driver IDs if provided
         driver_id_list = None
@@ -351,6 +452,27 @@ async def create_application(
         # Process the validated documents to extract information (without re-validating)
         documents_data = []
         or_expiration = None
+        today = datetime.now().date()
+
+        def _parse_full_date(value: str, label: str):
+            s = str(value or "").strip()
+            for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y"):
+                try:
+                    return datetime.strptime(s, fmt).date()
+                except ValueError:
+                    continue
+            raise HTTPException(status_code=400, detail=f"Invalid {label} format. Use MM/DD/YYYY.")
+
+        def _parse_or_expiration(value: str):
+            s = str(value or "").strip()
+            # Backward compatibility for older clients still sending MM/YYYY.
+            mm_yyyy = re.match(r"^(\d{2})/(\d{4})$", s)
+            if mm_yyyy:
+                exp_date = datetime.strptime(s, "%m/%Y")
+                exp_date = exp_date.replace(day=28) + timedelta(days=4)
+                exp_date = exp_date - timedelta(days=exp_date.day)
+                return exp_date.date()
+            return _parse_full_date(s, "OR expiration")
 
         for validation_data in validation_results:
             try:
@@ -360,20 +482,13 @@ async def create_application(
 
                 if use_confirmed:
                     if doc_type == "OR":
-                        try:
-                            exp_date = datetime.strptime(confirmed_or_expiration.strip(), "%m/%Y")
-                        except ValueError:
-                            raise HTTPException(status_code=400, detail="Invalid OR expiration format. Use MM/YYYY.")
-                        exp_date = exp_date.replace(day=28) + timedelta(days=4)
-                        exp_date = exp_date - timedelta(days=exp_date.day)
+                        reg_date = _parse_full_date(confirmed_or_registered, "OR registration date")
+                        exp_date = _parse_or_expiration(confirmed_or_expiration)
                     elif doc_type == "CR":
-                        try:
-                            exp_date = datetime.strptime(confirmed_or_expiration.strip(), "%m/%Y")
-                        except ValueError:
-                            raise HTTPException(status_code=400, detail="Invalid OR expiration format. Use MM/YYYY.")
-                        exp_date = exp_date.replace(day=28) + timedelta(days=4)
-                        exp_date = exp_date - timedelta(days=exp_date.day)
+                        reg_date = _parse_full_date(confirmed_cr_registered, "CR date issued")
+                        exp_date = None
                     else:
+                        reg_date = today
                         try:
                             exp_date = datetime.strptime(confirmed_dl_expiration.strip(), "%Y/%m/%d")
                         except ValueError:
@@ -384,6 +499,7 @@ async def create_application(
                 else:
                     if doc_type == "OR":
                         or_expiration = validation_result['dates']['expiration_date']
+                        reg_date = today
                         try:
                             exp_date = datetime.strptime(or_expiration, "%m/%Y")
                         except ValueError:
@@ -391,6 +507,7 @@ async def create_application(
                         exp_date = exp_date.replace(day=28) + timedelta(days=4)
                         exp_date = exp_date - timedelta(days=exp_date.day)
                     elif doc_type == "CR":
+                        reg_date = today
                         try:
                             exp_date = datetime.strptime(or_expiration, "%m/%Y")
                         except ValueError:
@@ -398,6 +515,7 @@ async def create_application(
                         exp_date = exp_date.replace(day=28) + timedelta(days=4)
                         exp_date = exp_date - timedelta(days=exp_date.day)
                     else:
+                        reg_date = today
                         exp_date = datetime.strptime(
                             validation_result['dates']['expiration_date'],
                             "%Y/%m/%d"
@@ -406,16 +524,11 @@ async def create_application(
                 documents_data.append({
                     "type": get_full_document_type(doc_type),
                     "image": content,
-                    "registered_date": datetime.now().date(),
-                    "expired_at": exp_date.date()
+                    "registered_date": reg_date,
+                    "expired_at": exp_date.date() if isinstance(exp_date, datetime) else exp_date
                 })
             finally:
-                tp = validation_data.get("temp_path")
-                if tp and os.path.exists(tp):
-                    try:
-                        os.remove(tp)
-                    except Exception as e:
-                        print(f"Warning: Could not remove temporary file {tp}: {e}")
+                _safe_unlink(validation_data.get("temp_path"))
 
         # Create application data
         application_data = ApplicationCreate(
@@ -451,15 +564,9 @@ async def create_application(
             } for error in e.errors()]
         )
     except Exception as e:
-        # Clean up any temporary files if validation_results exists
-        if 'validation_results' in locals():
+        if "validation_results" in locals():
             for v in validation_results:
-                try:
-                    if os.path.exists(v["temp_path"]):
-                        os.remove(v["temp_path"])
-                except Exception as clean_error:
-                    print(f"Warning: Could not remove temporary file {v['temp_path']}: {clean_error}")
-        
+                _safe_unlink(v.get("temp_path"))
         raise HTTPException(status_code=400, detail=str(e))
 
 # Add this new route
@@ -473,7 +580,20 @@ async def delete_application(
     Temporarily delete an application and all its related records (cascade delete)
     """
     view = ApplicantView(db)
-    return await view.delete_application(application_id)
+    return await view.delete_application(application_id, current_user.user_id)
+
+@router.post("/application/{application_id}/payment-slip", response_model=dict)
+async def send_payment_slip(
+    application_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """
+    Send the initial payment slip email for a specific application.
+    Can be triggered from the applicant dashboard via \"Get Payment Slip\".
+    """
+    view = ApplicantView(db)
+    return await view.send_initial_payment_slip(application_id, current_user.user_id)
 
 @router.get("/applications/to-submit", response_model=List[ApplicationListResponse])
 async def get_to_submit_applications(
@@ -632,6 +752,40 @@ async def get_document_image(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.get("/slip/{slip_id}/image")
+async def get_slip_image(
+    slip_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """Get uploaded cashier receipt image for the current applicant."""
+    try:
+        query = select(Slip).where(
+            and_(
+                Slip.slip_id == slip_id,
+                Slip.user_id == current_user.user_id
+            )
+        )
+        result = await db.execute(query)
+        slip = result.scalar_one_or_none()
+
+        if not slip or not slip.image:
+            raise HTTPException(status_code=404, detail="Slip image not found")
+
+        return Response(
+            content=slip.image,
+            media_type="image/jpeg",
+            headers={
+                "Content-Type": "image/jpeg",
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "max-age=3600"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.post("/authorized-driver", response_model=dict)
 async def create_authorized_driver(
     driver_first_name: str = Form(...),
@@ -645,47 +799,29 @@ async def create_authorized_driver(
     db: AsyncSession = Depends(get_db),
     current_user: UserInDB = Depends(get_current_applicant)
 ):
+    driver_temp_path = None
     try:
-        # Validate driver's license
-        driver_temp_path = f"temp_DL_{driver_license.filename}"
-        try:
-            with open(driver_temp_path, "wb") as buffer:
-                content = await driver_license.read()
-                buffer.write(content)
-                await driver_license.seek(0)
-            
-            # Driver text array for validation
-            driver_text_array = [
-                driver_first_name,
-                driver_last_name,
-                driver_birth_date.strftime("%Y/%m/%d"),
-                driver_relationship
-            ]
-
-            reference_path = document_type("DL")
-            if not reference_path:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid document type: DL"
-                )
-
-            # Validate driver's document
-            driver_validation = validate_document(
-                reference_path,
-                driver_temp_path,
-                driver_text_array,
-                doc_type="DL",
-                show_results=True,
-                save_results=True
-            )
-        finally:
-            # Always try to clean up the temp file, but don't fail if it doesn't exist
-            try:
-                if os.path.exists(driver_temp_path):
-                    os.remove(driver_temp_path)
-            except Exception as clean_error:
-                print(f"Warning: Could not remove temporary file {driver_temp_path}: {clean_error}")
-
+        content = await driver_license.read()
+        await driver_license.seek(0)
+        suffix = os.path.splitext(driver_license.filename or "")[1] or ".bin"
+        with tempfile.NamedTemporaryFile(delete=False, prefix="gpms_dl_", suffix=suffix) as f:
+            f.write(content)
+            driver_temp_path = f.name
+        driver_text_array = [
+            driver_first_name,
+            driver_last_name,
+            driver_birth_date.strftime("%Y/%m/%d"),
+            driver_relationship,
+        ]
+        reference_path = document_type("DL")  # Optional; validation uses OCR + applicant data
+        driver_validation = validate_document(
+            reference_path,
+            driver_temp_path,
+            driver_text_array,
+            doc_type="DL",
+            show_results=False,
+            save_results=False,
+        )
         if not driver_validation["is_valid"]:
             raise HTTPException(
                 status_code=422,
@@ -699,7 +835,6 @@ async def create_authorized_driver(
                     }
                 }
             )
-
         view = ApplicantView(db)
         return await view.create_authorized_driver(
             driver_first_name=driver_first_name,
@@ -712,11 +847,12 @@ async def create_authorized_driver(
             driver_license_exp_date=driver_license_exp_date,
             user_id=current_user.user_id
         )
-
     except HTTPException as he:
         raise he
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        _safe_unlink(driver_temp_path)
 
 @router.post("/application/{application_id}/assign-drivers")
 async def assign_drivers_to_application(
@@ -745,6 +881,26 @@ async def assign_drivers_to_application(
             status_code=400, 
             detail="Invalid driver IDs format. Please provide comma-separated numbers"
         )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/authorized-driver/{driver_id}", response_model=dict)
+async def delete_authorized_driver(
+    driver_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """
+    Permanently delete an authorized driver and its details for the current user.
+    """
+    try:
+        view = ApplicantView(db)
+        return await view.delete_authorized_driver(
+            driver_id=driver_id,
+            user_id=current_user.user_id
+        )
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -902,7 +1058,7 @@ async def update_application(
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Error in update_application: {str(e)}")
+        logger.exception("Error in update_application: %s", e)
         raise HTTPException(
             status_code=500,
             detail=f"Failed to update application: {str(e)}"
@@ -919,11 +1075,24 @@ async def request_email_verification(
     return await view.request_email_verification(email, current_user.user_id)
 
 
+@router.post("/verify-email-otp", response_model=dict)
+async def verify_email_otp(
+    otp: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """Verify email OTP only (no profile update). Used by application flow."""
+    return await ApplicantView(db).verify_email_otp(
+        user_id=current_user.user_id,
+        otp=otp
+    )
+
+
 @router.put("/verify-and-update-profile", response_model=dict)
 async def verify_and_update_profile(
     first_name: str = Form(...),
     last_name: str = Form(...),
-    birth_date: date = Form(...),
+    birth_date: str = Form(...),
     sex: str = Form(...),
     contact_no: str = Form(...),
     address: str = Form(...),
@@ -933,8 +1102,15 @@ async def verify_and_update_profile(
     db: AsyncSession = Depends(get_db),
     current_user: UserInDB = Depends(get_current_applicant)
 ):
+    """Verify OTP and update profile. For use only in Profile / update profile section."""
     try:
-        # Process image if provided
+        try:
+            birth_date_parsed = datetime.strptime(birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid birth_date format (use YYYY-MM-DD)"
+            )
         image_data = None
         if image:
             if not image.content_type.startswith("image/"):
@@ -943,11 +1119,10 @@ async def verify_and_update_profile(
                     detail="File uploaded is not an image"
                 )
             image_data = await image.read()
-
         return await ApplicantView(db).verify_and_update_profile(
             first_name=first_name,
             last_name=last_name,
-            birth_date=birth_date,
+            birth_date=birth_date_parsed,
             sex=sex,
             contact_no=contact_no,
             address=address,
@@ -956,6 +1131,8 @@ async def verify_and_update_profile(
             image_data=image_data,
             user_id=current_user.user_id
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1098,11 +1275,46 @@ async def delete_driver_from_application(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/application/extract-slip", response_model=dict)
+async def extract_slip_details(
+    slip_image: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_applicant)
+):
+    """Extract official receipt number and amount from uploaded cashier receipt."""
+    temp_path = None
+    try:
+        suffix = os.path.splitext(slip_image.filename or "")[1] or ".jpg"
+        with tempfile.NamedTemporaryFile(delete=False, prefix="gpms_extract_slip_", suffix=suffix) as f:
+            f.write(await slip_image.read())
+            temp_path = f.name
+
+        extracted_text = get_text_from_image(temp_path)
+        official_receipt = _extract_or_number_from_text(extracted_text)
+        amount = _extract_amount_from_text(extracted_text)
+
+        return {
+            "official_receipt": official_receipt,
+            "amount": amount,
+            "ocr_text_found": bool(extracted_text and extracted_text.strip()),
+        }
+    except Exception as e:
+        logger.warning("Slip OCR extraction failed: %s", e)
+        return {
+            "official_receipt": None,
+            "amount": None,
+            "ocr_text_found": False,
+        }
+    finally:
+        _safe_unlink(temp_path)
+
+
 @router.post("/applications/submit-pending", response_model=dict)
 async def submit_applications_to_pending(
     application_ids: str = Form(..., description="Comma-separated application IDs"),
     slip_image: UploadFile = File(..., description="Payment slip image"),
     official_receipt: str = Form(..., description="Official receipt number (XXXX-XXXXXXXXXXXX)"),  # Add this parameter
+    amount: Optional[float] = Form(None, description="Amount from cashier receipt"),
     db: AsyncSession = Depends(get_db),
     current_user: UserInDB = Depends(get_current_applicant)
 ):
@@ -1119,6 +1331,7 @@ async def submit_applications_to_pending(
             application_ids=id_list, 
             slip_image=contents,
             official_receipt=official_receipt,  # Pass the receipt number
+            paid_amount=amount,
             user_id=current_user.user_id
         )
         

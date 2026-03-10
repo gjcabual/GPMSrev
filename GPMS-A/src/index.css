@@ -20,3 +20,61 @@
 * {
  font-family: "Poppins";
 }
+
+/* Hide main scrollbars globally; scrolling still works */
+html,
+body {
+ scrollbar-width: none;
+ -ms-overflow-style: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+ display: none;
+}
+
+/* Global button feedback for all pages */
+button {
+ transition:
+  background-color 160ms ease,
+  color 160ms ease,
+  box-shadow 160ms ease,
+  transform 120ms ease,
+  opacity 160ms ease;
+}
+
+button:not(:disabled) {
+ cursor: pointer;
+}
+
+button:not(:disabled):hover {
+ box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+button:not(:disabled):active {
+ transform: translateY(1px) scale(0.99);
+}
+
+button:focus-visible {
+ outline: 2px solid #1a2635;
+ outline-offset: 2px;
+}
+
+button:disabled {
+ cursor: not-allowed;
+ opacity: 0.75;
+}
+
+/* Keep Sonner close button inside toast at top-right */
+[data-sonner-toast] [data-close-button] {
+ left: auto !important;
+ right: 10px !important;
+ top: 50% !important;
+ transform: translateY(-50%) !important;
+ border: none !important;
+ border-radius: 0 !important;
+ background: transparent !important;
+ box-shadow: none !important;
+ width: auto !important;
+ height: auto !important;
+ padding: 0 !important;
+}

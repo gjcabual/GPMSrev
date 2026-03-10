@@ -4,6 +4,11 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { buildUrl } from "../../utils/buildUrl";
 import { toast } from "sonner";
 
+const PASSWORD_REGEX =
+ /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,72}$/;
+const PASSWORD_POLICY_MESSAGE =
+ "Password must be at least 8 characters and include one uppercase, one number, and one special character.";
+
 export const ResetPassword = () => {
  const [newPassword, setNewPassword] = useState("");
  const [confirmPassword, setConfirmPassword] = useState("");
@@ -46,8 +51,8 @@ export const ResetPassword = () => {
    return;
   }
 
-  if (newPassword.length < 8) {
-   setPasswordError("Password must be at least 8 characters");
+  if (!PASSWORD_REGEX.test(newPassword)) {
+   setPasswordError(PASSWORD_POLICY_MESSAGE);
    return;
   }
 
@@ -115,6 +120,7 @@ export const ResetPassword = () => {
          placeholder="Enter new password"
          disabled={isLoading}
         />
+        <p className="text-xs text-gray-500 mt-1">{PASSWORD_POLICY_MESSAGE}</p>
        </div>
        <div>
         <label htmlFor="confirmPassword" className="block mb-2">

@@ -8,12 +8,13 @@ export const Landing = () => {
    {/* Navbar */}
    <div className="px-5 md:px-20 w-full h-20 bg-gray-100 z-50 flex items-center justify-between">
     <img src="/main_logo.png" alt="" className="w-32 md:w-48" />
-    <button
+    <p
+    type="button"
      onClick={() => nav("/applicant-login")}
-     className="text-sm md:text-base cursor-pointer text-gray-600 hover:text-primary"
+     className="p-2 rounded-md text-sm md:text-base cursor-pointer hover:text-primary/80 "
     >
      Login
-    </button>
+    </p>
    </div>
 
    {/* Background Image */}

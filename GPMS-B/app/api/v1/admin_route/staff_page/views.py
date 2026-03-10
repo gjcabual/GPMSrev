@@ -40,7 +40,10 @@ class StaffView:
     ) -> BatchStickersCreateResponse:
         try:
             controller = StaffController(db)
-            created_batches = await controller.create_batch_sticker_sessions(batch_data.batches)
+            created_batches = await controller.create_batch_sticker_sessions(
+                batch_data.batches,
+                batch_data.batch_name
+            )
             
             return BatchStickersCreateResponse(
                 success=True,
@@ -49,6 +52,7 @@ class StaffView:
                     BatchStickerResponse(
                         batch_id=batch.batch_id,
                         type=batch.type,
+                        batch_name=batch.batch_name,
                         start_at=batch.start_at,
                         end_at=batch.end_at,
                         price=batch.price,

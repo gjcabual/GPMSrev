@@ -117,8 +117,6 @@ export const ApplicationReview = ({
  const nav = useNavigate();
  const [data, setData] = useState(null);
  const [loading, setLoading] = useState(true);
- const [confirmed, setConfirmed] = useState(false);
- const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
  const { id } = useParams();
 
@@ -212,120 +210,59 @@ export const ApplicationReview = ({
          {data?.status || "Pending"}
         </span>
        </p>
+       {String(data?.status || "").toLowerCase() === "rejected" &&
+        String(data?.rejection_remarks || "").trim() && (
+         <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-3">
+          <p className="text-xs sm:text-sm font-semibold text-red-700">
+           Rejection Remarks
+          </p>
+          <p className="text-xs sm:text-sm text-red-800 mt-1">
+           {data?.rejection_remarks}
+          </p>
+         </div>
+        )}
        <div className="mt-4 sm:mt-6 md:mt-10 space-y-8 sm:space-y-12 md:space-y-20">
         <PersonalInfo data={data?.applicant} />
         <VehicleInfo data={data?.applicant?.vehicle_information} />
-        <ValidCredentials data={data?.applicant?.documents} />
+        <ValidCredentials
+         data={data?.applicant?.documents}
+         slip={data?.slip}
+         status={data?.status}
+        />
         <Application data={data} />
         <AuthorizedDriver data={data?.applicant?.driver} />
        </div>
 
-       <div className="mt-6 sm:mt-8 md:mt-10 text-center">
-        <div className="mb-4 sm:mb-5">
-         <hr />
-        </div>
+        <div className="mt-6 sm:mt-8 md:mt-10 text-center">
+         <div className="mb-4 sm:mb-5">
+          <hr />
+         </div>
 
-        {!isFromLog ? (
-         <>
+         {!isFromLog ? (
           <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-4 mt-4 sm:mt-5">
            <button
+            onClick={() => nav(-1)}
+            className="border border-primary text-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium hover:bg-primary/5"
+           >
+            Back
+           </button>
+           <button
             onClick={() => nav("/applicant/dashboard")}
-            disabled={!confirmed}
-            className={`bg-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium ${
-             confirmed
-              ? "hover:bg-primary/90 text-white"
-              : "bg-primary/50 cursor-not-allowed text-white/80"
-            }`}
+            className="bg-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium hover:bg-primary/90 text-white"
            >
             Continue
            </button>
+          </div>
+         ) : (
+          <div className="flex justify-center mt-4 sm:mt-5">
            <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="bg-red-500 hover:bg-red-600 transition-colors text-white h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium"
+            onClick={() => nav(-1)}
+            className="border border-primary text-primary h-8 sm:h-10 rounded-md px-4 sm:px-6 text-sm sm:text-base font-medium hover:bg-primary/5"
            >
-            Delete
+            Back
            </button>
           </div>
-
-          {showDeleteConfirm && (
-           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-4 sm:p-6 rounded-lg shadow-lg w-full max-w-md">
-             <div className="flex items-center justify-between mb-3 sm:mb-4">
-              <h3 className="text-base sm:text-lg font-medium text-gray-900">
-               Delete Application
-              </h3>
-              <button
-               onClick={() => setShowDeleteConfirm(false)}
-               className="text-gray-500 hover:text-gray-700"
-              >
-               <IoCloseCircle size={20} className="sm:size-6" />
-              </button>
-             </div>
-             <p className="mb-3 sm:mb-4 text-sm sm:text-base text-gray-700">
-              Are you sure you want to delete this application? This action
-              cannot be undone.
-             </p>
-
-             <div className="mb-3 sm:mb-4 flex items-start">
-              <input
-               type="checkbox"
-               id="confirm-delete"
-               className="mt-1 accent-primary h-4 w-4"
-               checked={confirmed}
-               onChange={() => setConfirmed(!confirmed)}
-              />
-              <label
-               htmlFor="confirm-delete"
-               className="ml-2 text-xs sm:text-sm text-gray-700"
-              >
-               I confirm that I have reviewed and agree that the data entered is
-               accurate and complete.
-              </label>
-             </div>
-
-             <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-              <button
-               onClick={() => setShowDeleteConfirm(false)}
-               className="bg-gray-300 hover:bg-gray-400 px-3 sm:px-4 py-1.5 sm:py-2 rounded text-sm sm:text-base text-gray-800"
-              >
-               Cancel
-              </button>
-              <button
-               onClick={handleDelete}
-               disabled={!confirmed}
-               className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded text-sm sm:text-base text-white ${
-                confirmed
-                 ? "bg-red-500 hover:bg-red-600"
-                 : "bg-red-300 cursor-not-allowed"
-               }`}
-              >
-               <span className="flex items-center gap-1">
-                <span>Delete Application By ID</span>
-               </span>
-              </button>
-             </div>
-            </div>
-           </div>
-          )}
-
-          <div className="mt-3 sm:mt-5 flex items-center justify-center gap-1">
-           <input
-            type="checkbox"
-            id="confirm-review"
-            className="accent-primary h-4 w-4"
-            checked={confirmed}
-            onChange={() => setConfirmed(!confirmed)}
-           />
-           <label
-            htmlFor="confirm-review"
-            className="text-xs sm:text-sm font-light text-gray-500"
-           >
-            I confirm that I have reviewed and agree that the data entered is
-            accurate and complete.
-           </label>
-          </div>
-         </>
-        ) : null}
+         )}
        </div>
       </div>
      </div>
@@ -560,8 +497,11 @@ const VehicleInfo = ({ data }) => {
  );
 };
 
-const ValidCredentials = ({ data }) => {
- if (!data || !data.length) {
+const ValidCredentials = ({ data, slip, status }) => {
+ const hasDocuments = Array.isArray(data) && data.length > 0;
+ const showUploadedReceipt = Boolean(slip?.image);
+
+ if (!hasDocuments && !showUploadedReceipt) {
   return (
    <>
     <div>
@@ -572,12 +512,12 @@ const ValidCredentials = ({ data }) => {
       <hr />
      </div>
      <div className="mt-4 md:mt-10 flex justify-center">
-      <p className="text-gray-500">No credentials available</p>
+       <p className="text-gray-500">No credentials available</p>
+      </div>
      </div>
-    </div>
-   </>
-  );
- }
+    </>
+   );
+  }
 
  // Helper function to get icon based on document type
  const getDocumentIcon = (type) => {
@@ -617,9 +557,39 @@ const ValidCredentials = ({ data }) => {
      <hr />
     </div>
     <div className="mt-4 md:mt-10">
-     <div className="ml-0 md:ml-[150px] grid grid-cols-1 md:grid-cols-3 gap-5">
-      {data.map((doc, index) => (
-       <div key={index} className="w-full flex flex-col items-center">
+      <div className="ml-0 md:ml-[150px] grid grid-cols-1 md:grid-cols-3 gap-5">
+       {showUploadedReceipt && (
+        <div className="w-full flex flex-col items-center">
+         <div>
+          <ImageDisplay
+           key={`uploaded-slip-${slip?.slip_id || "latest"}`}
+           imageUrl={slip.image}
+           alt="Uploaded Cashier Receipt"
+           className="w-[170px] h-[170px] md:h-[250px] object-cover border rounded-md"
+           fallback={
+            <div className="w-[170px] h-[170px] md:h-[200px] border rounded-md p-2 hover:shadow-md transition-shadow bg-gray-100 flex flex-col items-center justify-center">
+             <FaFileAlt size={40} className="text-primary" />
+             <p className="text-xs md:text-sm font-medium text-primary mt-4">
+              Uploaded Cashier Receipt
+             </p>
+             <p className="text-xs text-gray-400 mt-1">Preview not available</p>
+            </div>
+           }
+          />
+          <p className="text-xs md:text-sm font-medium text-primary mt-4 text-center">
+           Uploaded Cashier Receipt
+          </p>
+          <p className="text-xs text-gray-500 mt-1 text-center">
+           OR: {slip?.official_receipt || "N/A"}
+          </p>
+          <p className="text-xs text-gray-500 text-center">
+           Amount: {slip?.amount ?? "N/A"}
+          </p>
+         </div>
+        </div>
+       )}
+       {(data || []).map((doc, index) => (
+        <div key={index} className="w-full flex flex-col items-center">
         {doc.image ? (
          <div>
           {" "}

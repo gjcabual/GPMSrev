@@ -21,6 +21,8 @@ export const Header = ({ isSidebarOpen, setIsSidebarOpen }) => {
    : segments[0] === "staff"
    ? "staff"
    : "applicant";
+ const roleLabel =
+  role === "admin" ? "Admin" : role === "staff" ? "Staff" : "Applicant";
 
  // Fetch profile information
  useEffect(() => {
@@ -113,9 +115,14 @@ export const Header = ({ isSidebarOpen, setIsSidebarOpen }) => {
        getInitials()
       )}
      </div>
-     <h1 className="font-medium text-sm sm:text-base truncate max-w-[120px] sm:max-w-[200px]">
-      {loading ? "Loading..." : getFullName()}
-     </h1>
+     <div className="flex items-center gap-2 min-w-0">
+      <h1 className="font-medium text-sm sm:text-base truncate max-w-[120px] sm:max-w-[200px]">
+       {loading ? "Loading..." : getFullName()}
+      </h1>
+      <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 text-[10px] sm:text-xs font-semibold px-2 py-0.5 border border-slate-200 whitespace-nowrap">
+       {roleLabel}
+      </span>
+     </div>
     </div>
 
     {/* Right Side: Date and Day or New Application button */}
@@ -141,5 +148,4 @@ export const Header = ({ isSidebarOpen, setIsSidebarOpen }) => {
   </div>
  );
 };
-
 

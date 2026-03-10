@@ -8,6 +8,7 @@ from app.utils.email import send_verification_email
 from app.db.repositories.token import create_verification_token, verify_user_email
 from app.db.models.profile import Profile, Sex
 from app.db.models.user import User  
+from app.utils.validators import ensure_valid_email, ensure_valid_password
 import secrets
 from datetime import timedelta
 from app.core.security import create_access_token
@@ -20,8 +21,11 @@ from app.db.repositories.token import create_token
 class UserController:
     @staticmethod
     async def register_user(db: Session, user: UserAppCreate) -> RegistrationResponse:
+        normalized_email = ensure_valid_email(user.email)
+        ensure_valid_password(user.password)
+
         # Check for existing email
-        db_user = await get_user_by_email(db, email=user.email)
+        db_user = await get_user_by_email(db, email=normalized_email)
         if db_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -31,7 +35,7 @@ class UserController:
         try:
             # Create user with verified_at as None
             new_user = User(
-                email=user.email,
+                email=normalized_email,
                 password=get_password_hash(user.password),
                 role=user.role,
                 verified_at=None  # Explicitly set as unverified
@@ -57,7 +61,7 @@ class UserController:
             token = await create_verification_token(db, new_user.user_id, otp, expires_at, commit=False)
             
             # Send verification email before committing - rollback if it fails
-            email_sent = await send_verification_email(user.email, otp)
+            email_sent = await send_verification_email(normalized_email, otp)
             if not email_sent:
                 await db.rollback()
                 raise HTTPException(
@@ -71,9 +75,11 @@ class UserController:
             return RegistrationResponse(
                 message="Registration successful. Please check your email for the verification code.",
                 status=True,
-                email=user.email
+                email=normalized_email
             )
 
+        except HTTPException as http_ex:
+            raise http_ex
         except Exception as e:
             await db.rollback()
             raise HTTPException(
@@ -84,43 +90,16 @@ class UserController:
     @staticmethod
     async def verify_email(db: Session, email: str, otp: str) -> VerificationResponse:
         try:
+            normalized_email = ensure_valid_email(email)
             # Get user by email
-            user = await get_user_by_email(db, email)
+            user = await get_user_by_email(db, normalized_email)
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found"
                 )
             
-            # Debug: Get the token directly
-            from app.db.models.token import Token
-            from sqlalchemy import and_
-            
-            debug_query = select(Token).where(
-                and_(
-                    Token.user_id == user.user_id,
-                    Token.token_type == "verification"
-                )
-            ).order_by(Token.created_at.desc())
-            
-            debug_result = await db.execute(debug_query)
-            debug_token = debug_result.scalar_one_or_none()
-            
-            print("==== DEBUG INFO ====")
-            print(f"Current time: {datetime.now()}")
-            print(f"Provided OTP: {otp}")
-            
-            if debug_token:
-                print(f"Token in DB: {debug_token.token}")
-                print(f"Token type: {debug_token.token_type}")
-                print(f"Created at: {debug_token.created_at}")
-                print(f"Expires at: {debug_token.expired_at}")
-                print(f"Is expired: {debug_token.expired_at < datetime.now()}")
-                print(f"OTP match: {debug_token.token == otp}")
-            else:
-                print("No verification token found")
-            
-            # Continue with normal verification
+            # Verify OTP
             verification_result = await verify_user_email(db, user.user_id, otp)
             if not verification_result:
                 raise HTTPException(
@@ -179,7 +158,8 @@ class UserController:
 
     @staticmethod
     async def resend_verification(db: Session, email: str) -> ResendVerificationResponse:
-        user = await get_user_by_email(db, email)
+        normalized_email = ensure_valid_email(email)
+        user = await get_user_by_email(db, normalized_email)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -198,7 +178,7 @@ class UserController:
         token = await create_verification_token(db, user.user_id, otp, expires_at)
         
         # Send verification email - use the OTP directly
-        await send_verification_email(email, otp)
+        await send_verification_email(normalized_email, otp)
         
         return ResendVerificationResponse(
             message="A new verification code has been sent to your email",

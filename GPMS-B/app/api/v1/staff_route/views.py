@@ -77,7 +77,7 @@ class StaffView:
         if not latest_status:
             raise HTTPException(status_code=404, detail="Application not found")
 
-        if latest_status.status != "Pending":
+        if latest_status.status not in ("Pending", "Waiting for approval"):
             raise HTTPException(
                 status_code=400,
                 detail=f"This application has already been {latest_status.status.lower()}."
@@ -89,6 +89,7 @@ class StaffView:
         self, 
         application_id: int, 
         status: str, 
+        remarks: str | None,
         current_user_id: UUID
     ) -> ApplicationStatus:
         """
@@ -97,16 +98,47 @@ class StaffView:
         """
         
         # Get application details first
-        query = select(Application).where(Application.application_id == application_id)
+        query = (
+            select(Application)
+            .options(joinedload(Application.slip))
+            .where(Application.application_id == application_id)
+        )
         result = await self.db.execute(query)
         application = result.scalar_one_or_none()
         
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
 
+        status_value = status.value if hasattr(status, "value") else str(status)
+
+        # Do not allow approval until applicant uploads receipt image,
+        # OR number, and amount from cashier.
+        if status_value == "Approved":
+            slip = application.slip
+            has_receipt_payload = bool(
+                slip
+                and slip.image
+                and slip.official_receipt
+                and slip.total_amount is not None
+                and float(slip.total_amount) > 0
+            )
+            if not has_receipt_payload:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot approve yet. Applicant must upload receipt image with OR number and amount."
+                )
+
+        normalized_remarks = (remarks or "").strip()
+        if status_value == "Rejected" and not normalized_remarks:
+            raise HTTPException(
+                status_code=400,
+                detail="Remarks are required when rejecting an application."
+            )
+
         # Create status update
         new_status = ApplicationStatus(
-            status=status,
+            status=status_value,
+            remarks=normalized_remarks if status_value == "Rejected" else (normalized_remarks or None),
             date=date.today(),
             application_id=application_id,
             processed_by=current_user_id
@@ -114,7 +146,7 @@ class StaffView:
         self.db.add(new_status)
         
         # If approved, create and assign a sticker (if doesn't already have one)
-        if status == "Approved" and not application.sticker_id:
+        if status_value == "Approved" and not application.sticker_id:
             # Create sticker
             new_sticker = await self.create_sticker(
                 application_id=application_id,
@@ -126,7 +158,7 @@ class StaffView:
             application.sticker_id = new_sticker.id
         
         # If rejected, remove any existing sticker
-        elif status == "Rejected" and application.sticker_id:
+        elif status_value == "Rejected" and application.sticker_id:
             # Find the sticker object
             sticker_query = select(Sticker).where(Sticker.id == application.sticker_id)
             sticker_result = await self.db.execute(sticker_query)
@@ -153,6 +185,7 @@ class StaffView:
                 .joinedload(User.profiles),
                 joinedload(Application.vehicle)
                 .joinedload(Vehicle.documents),
+                joinedload(Application.slip),
                 joinedload(Application.assigned_drivers)
                 .joinedload(AssignedDriver.auth_driver)
                 .joinedload(AuthDriver.document),
@@ -172,7 +205,7 @@ class StaffView:
         return application
 
     async def get_pending_applications(self):
-        """Get all applications where the latest status is Pending"""
+        """Get all applications where the latest status is Pending or Waiting for approval"""
         
         # Subquery to get the latest status_id for each application
         latest_status_subquery = (
@@ -191,7 +224,7 @@ class StaffView:
                   Application.application_id == latest_status_subquery.c.application_id)
             .join(ApplicationStatus,
                   ApplicationStatus.status_id == latest_status_subquery.c.latest_status_id)
-            .where(ApplicationStatus.status == "Pending")
+            .where(ApplicationStatus.status.in_(["Pending", "Waiting for approval"]))
             .options(
                 joinedload(Application.user).joinedload(User.profiles),
                 joinedload(Application.vehicle),
@@ -215,19 +248,28 @@ class StaffView:
         Get available sticker number based on role and batch ranges
         Returns tuple of (sticker_number, batch_id)
         """
-        # Map application roles to batch sticker types
+        # Map application roles to batch sticker types (supports legacy/current labels).
         role_to_type = {
             "STUDENT": "Student",
             "EMPLOYEE": "Employee Parking",
+            "EMPLOYEE_PARKING": "Employee Parking",
             "DROP_OFF": "Drop Off",
-            "CONCESSIONAIRE": "Concessionaire"
+            "DROPOFF": "Drop Off",
+            "CONCESSIONAIRE": "Concessionaire",
         }
 
-        batch_type = role_to_type.get(role.upper())
+        normalized_role = (
+            str(role or "")
+            .strip()
+            .upper()
+            .replace("-", "_")
+            .replace(" ", "_")
+        )
+        batch_type = role_to_type.get(normalized_role)
         if not batch_type:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid application role for sticker generation"
+                detail=f"Invalid application role for sticker generation: {role}"
             )
 
         # Get active batch for the role type

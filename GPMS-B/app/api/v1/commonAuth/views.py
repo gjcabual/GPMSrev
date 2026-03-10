@@ -87,3 +87,19 @@ class CommonAuthView:
         return await CommonAuthController.verify_otp_and_reset_password(
             db, email, otp, new_password
         )
+
+    @staticmethod
+    async def request_email_change(
+        db: AsyncSession, user_id: UUID, new_email: str, current_password: str
+    ) -> dict:
+        return await CommonAuthController.request_email_change(
+            db, user_id, new_email, current_password
+        )
+
+    @staticmethod
+    async def resend_email_change_otp(db: AsyncSession, user_id: UUID) -> dict:
+        return await CommonAuthController.resend_email_change_otp(db, user_id)
+
+    @staticmethod
+    async def verify_email_change(db: AsyncSession, user_id: UUID, otp_code: str) -> dict:
+        return await CommonAuthController.verify_email_change(db, user_id, otp_code)

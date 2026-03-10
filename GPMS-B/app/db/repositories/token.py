@@ -23,6 +23,11 @@ async def delete_token(db: AsyncSession, token: str):
         await db.delete(db_token)
         await db.commit()
 
+
+async def delete_all_tokens_by_user_id(db: AsyncSession, user_id: uuid.UUID):
+    await db.execute(delete(TokenModel).where(TokenModel.user_id == user_id))
+    await db.commit()
+
 async def get_token_by_value(db: AsyncSession, token: str):
     result = await db.execute(select(TokenModel).filter(TokenModel.token == token))
     return result.scalars().first()

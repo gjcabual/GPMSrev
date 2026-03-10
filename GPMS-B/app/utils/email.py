@@ -232,6 +232,101 @@ def send_password_reset_otp(to_email: str, otp: str):
         print(f"Failed to send password reset OTP to {to_email}: {e}")
         raise e
 
+
+def send_email_change_otp(to_email: str, otp: str):
+    """Send OTP for confirming a new email address."""
+    from_email = os.getenv("EMAIL_ADDRESS")
+    from_password = os.getenv("EMAIL_PASSWORD")
+    smtp_server = os.getenv("SMTP_SERVER")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = from_email
+    msg["To"] = to_email
+    msg["Subject"] = "Confirm your new email address"
+
+    html_content = f"""
+    <html>
+    <body style="font-family:Segoe UI,Arial,sans-serif;color:#333">
+        <h2>Confirm your new email address</h2>
+        <p>Use this OTP code to complete your email update request:</p>
+        <p style="font-size:24px;font-weight:700;letter-spacing:4px">{otp}</p>
+        <p>This code expires in 15 minutes.</p>
+        <p>If you did not request this change, ignore this email.</p>
+    </body>
+    </html>
+    """
+
+    msg.attach(MIMEText(html_content, "html"))
+    context = ssl.create_default_context()
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls(context=context)
+        server.login(from_email, from_password)
+        server.sendmail(from_email, to_email, msg.as_string())
+
+
+def send_email_change_alert_to_old_email(old_email: str, new_email: str):
+    """Security notice sent to the old email when a change request is made."""
+    from_email = os.getenv("EMAIL_ADDRESS")
+    from_password = os.getenv("EMAIL_PASSWORD")
+    smtp_server = os.getenv("SMTP_SERVER")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = from_email
+    msg["To"] = old_email
+    msg["Subject"] = "Email change request detected"
+
+    html_content = f"""
+    <html>
+    <body style="font-family:Segoe UI,Arial,sans-serif;color:#333">
+        <h2>Email change request</h2>
+        <p>We detected a request to change your account email.</p>
+        <p><strong>Requested new email:</strong> {new_email}</p>
+        <p>No changes are applied until verification is completed.</p>
+        <p>If this wasn't you, reset your password immediately.</p>
+    </body>
+    </html>
+    """
+
+    msg.attach(MIMEText(html_content, "html"))
+    context = ssl.create_default_context()
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls(context=context)
+        server.login(from_email, from_password)
+        server.sendmail(from_email, old_email, msg.as_string())
+
+
+def send_email_change_success_notice(old_email: str, new_email: str):
+    """Confirmation notice after email change is completed."""
+    from_email = os.getenv("EMAIL_ADDRESS")
+    from_password = os.getenv("EMAIL_PASSWORD")
+    smtp_server = os.getenv("SMTP_SERVER")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = from_email
+    msg["To"] = old_email
+    msg["Subject"] = "Your account email was changed"
+
+    html_content = f"""
+    <html>
+    <body style="font-family:Segoe UI,Arial,sans-serif;color:#333">
+        <h2>Email updated successfully</h2>
+        <p>Your account email has been changed from this address to:</p>
+        <p><strong>{new_email}</strong></p>
+        <p>If this was not you, contact support immediately.</p>
+    </body>
+    </html>
+    """
+
+    msg.attach(MIMEText(html_content, "html"))
+    context = ssl.create_default_context()
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls(context=context)
+        server.login(from_email, from_password)
+        server.sendmail(from_email, old_email, msg.as_string())
+
 async def send_verification_email(to_email: str, otp: str):
     """Send verification OTP code via email"""
     from_email = os.getenv("EMAIL_ADDRESS")

@@ -15,6 +15,27 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { BiInfoCircle } from "react-icons/bi";
 
+// #region agent log helper
+const agentLog = (payload) => {
+ fetch("http://127.0.0.1:7242/ingest/083cd7ac-27ab-49c8-accd-3eca228db809", {
+  method: "POST",
+  headers: {
+   "Content-Type": "application/json",
+   "X-Debug-Session-Id": "6cd765",
+  },
+  body: JSON.stringify({
+   sessionId: "6cd765",
+   runId: payload.runId || "pre-fix",
+   hypothesisId: payload.hypothesisId,
+   location: payload.location,
+   message: payload.message,
+   data: payload.data || {},
+   timestamp: Date.now(),
+  }),
+ }).catch(() => {});
+};
+// #endregion
+
 // Image display component that fetches image from backend
 const ImageDisplay = ({ imageUrl, alt, className, fallback }) => {
  const [loading, setLoading] = useState(true);
@@ -129,6 +150,25 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
 
    const data = await response.json();
    setApplications(data);
+   // #region agent log
+   agentLog({
+    hypothesisId: "H2_H4",
+    location: "ApplicationInfo.jsx:getMyApplications",
+    message: "Fetched applications for Application tab",
+    data: {
+     filter,
+     count: Array.isArray(data) ? data.length : 0,
+     sample:
+      Array.isArray(data) && data.length > 0
+       ? {
+          application_id: data[0].application_id,
+          status: data[0].status,
+          vehicle_type: data[0].vehicle_type,
+         }
+       : null,
+    },
+   });
+   // #endregion
   } catch (error) {
    console.error("Error fetching applications:", error);
    toast.error("Failed to load applications. Please try again.");
@@ -161,17 +201,61 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
   );
  }
 
- const ApplicationCard = ({ application }) => {
+  const ApplicationCard = ({ application }) => {
   if (!application) {
    return null;
   }
 
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showGetSlipConfirm, setShowGetSlipConfirm] = useState(false);
+  const [isRequestingSlip, setIsRequestingSlip] = useState(false);
+
+  // Always derive status from backend data
+  const status = application.status || "Pending";
+  const normalizedStatus = String(status).trim().toLowerCase();
+  const canRequestSlip = normalizedStatus === "pending";
+  const canUploadReceipt = normalizedStatus === "waiting for approval";
+  const hasUploadedReceipt = Boolean(application?.has_uploaded_receipt);
+
+  const handleDelete = async () => {
+   try {
+    setIsDeleting(true);
+    const response = await fetch(
+     buildUrl(`/applicant/application/${application.application_id}`),
+     {
+      method: "DELETE",
+      headers: {
+       "Content-Type": "application/json",
+       Authorization: `Bearer ${localStorage.getItem("token")}`,
+      },
+     }
+    );
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+     toast.error(data.detail || data.message || "Failed to delete application.");
+     return;
+    }
+
+    toast.success("Application deleted successfully.");
+    setShowDeleteModal(false);
+    // Refresh list after delete
+    getMyApplications();
+   } catch (error) {
+    console.error("Error deleting application:", error);
+    toast.error("Failed to delete application. Please try again.");
+   } finally {
+    setIsDeleting(false);
+   }
+  };
 
   return (
    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden transition-transform hover:shadow-md">
     <div className="h-1 bg-primary" />
-    <div className="p-3 sm:p-4">
+     <div className="p-3 sm:p-4">
      <div className="flex items-center justify-between mb-2 sm:mb-3">
       <div className="flex items-center gap-1.5 sm:gap-2">
        <div className="h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-primary/10 flex items-center justify-center">
@@ -179,9 +263,19 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
        </div>
        <div>
         <h3 className="font-medium text-base sm:text-lg">
-         {application.application_role}
+         <span
+          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+            normalizedStatus === "pending"
+             ? "bg-orange-100 text-orange-700"
+             : normalizedStatus === "waiting for approval"
+             ? "bg-lime-100 text-lime-700"
+             : "bg-blue-100 text-blue-700"
+           }`}
+         >
+         {status}
+         </span>
         </h3>
-        <p className="text-xs sm:text-sm text-gray-500">Application Role</p>
+        <p className="text-xs sm:text-sm text-gray-500 mt-1">Status</p>
        </div>
       </div>
      </div>
@@ -207,7 +301,7 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
         </p>
        </div>
        <div className="bg-gray-50 p-2 sm:p-4 rounded-md">
-        <p className="text-sm sm:text-base text-gray-500">Role</p>
+        <p className="text-sm sm:text-base text-gray-500">Application Role</p>
         <p className="font-medium text-base sm:text-lg truncate">
          {application?.application_role || "N/A"}
         </p>
@@ -249,25 +343,65 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
        </div>
       </div>
      </div>
-     <div className="mt-4 sm:mt-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-      <div className="flex items-center gap-2">
-       <button className="h-7 sm:h-8 text-xs sm:text-sm font-medium text-white flex items-center bg-red-500 rounded-md px-3 sm:px-4">
-        To Pay
-       </button>
-       <button
-        onClick={() => setShowUploadModal(true)}
-        className="border border-primary rounded-md px-4 h-8 text-sm text-primary"
-       >
-        Upload Receipt
-       </button>
-      </div>
-      <div className="flex items-start gap-2">
-       <BiInfoCircle size={20} className=" text-gray-500 flex-shrink-0" />
-       <p className="text-xs sm:text-sm text-gray-500">
-        Check your email for the slip, pay at the cashier, upload your receipt,
-        then proceed to OCSSS Office
-       </p>
-      </div>
+      <div className="mt-4 sm:mt-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+       <div className="flex items-center gap-2">
+       {canRequestSlip && (
+        <>
+         <button
+          type="button"
+          onClick={() => setShowGetSlipConfirm(true)}
+          className="h-7 sm:h-8 text-xs sm:text-sm font-medium text-white flex items-center bg-primary rounded-md px-3 sm:px-4 hover:bg-primary/90"
+         >
+          Get Payment Slip
+         </button>
+         <button
+          type="button"
+          onClick={() => setShowDeleteModal(true)}
+          className="border border-red-500 text-red-600 rounded-md px-4 h-8 text-sm hover:bg-red-50"
+         >
+          Delete
+         </button>
+        </>
+       )}
+       {canUploadReceipt && !hasUploadedReceipt && (
+        <button
+          onClick={() => setShowUploadModal(true)}
+          className="border border-primary rounded-md px-4 h-8 text-sm text-primary"
+        >
+         Upload Receipt
+        </button>
+       )}
+       {canUploadReceipt && hasUploadedReceipt && (
+        <span className="inline-flex items-center rounded-md px-3 h-8 text-sm font-medium bg-green-100 text-green-700 border border-green-200">
+         Receipt Uploaded
+        </span>
+       )}
+       </div>
+       {canRequestSlip && (
+        <div className="flex items-start gap-2">
+         <BiInfoCircle size={20} className="text-blue-600 flex-shrink-0" />
+         <p className="text-xs sm:text-sm text-blue-600">
+          Your application is pending. Click Get Payment Slip to continue.
+         </p>
+        </div>
+       )}
+       {canUploadReceipt && !hasUploadedReceipt && (
+        <div className="flex items-start gap-2">
+         <BiInfoCircle size={20} className=" text-gray-500 flex-shrink-0" />
+        <p className="text-xs sm:text-sm text-blue-600">
+         Check your email for the slip, pay at the cashier then upload your
+         receipt.
+        </p>
+       </div>
+      )}
+      {canUploadReceipt && hasUploadedReceipt && (
+       <div className="flex items-start gap-2">
+        <BiInfoCircle size={20} className="text-green-600 flex-shrink-0" />
+        <p className="text-xs sm:text-sm text-green-700">
+         Your receipt has been uploaded. Please wait for staff approval.
+        </p>
+       </div>
+      )}
      </div>
      {showUploadModal && (
       <UploadSlipModal
@@ -276,6 +410,118 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
        applicationRole={application.application_role}
        onSuccess={onSlipUploaded}
       />
+     )}
+     {showDeleteModal && (
+      <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex justify-center items-center z-50">
+       <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-6 relative">
+        <button
+         type="button"
+         onClick={() => setShowDeleteModal(false)}
+         className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+        >
+         <IoClose size={20} />
+        </button>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">
+         Delete application?
+        </h2>
+        <p className="text-sm text-gray-600 mb-4">
+         This will permanently remove this pending application. This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2">
+         <button
+          type="button"
+          onClick={() => setShowDeleteModal(false)}
+          className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+         >
+          Cancel
+         </button>
+         <button
+          type="button"
+          onClick={handleDelete}
+          disabled={isDeleting}
+          className={`px-4 py-2 text-sm rounded-md text-white ${
+           isDeleting ? "bg-red-300 cursor-not-allowed" : "bg-red-500 hover:bg-red-600"
+          }`}
+         >
+          {isDeleting ? "Deleting..." : "Delete"}
+         </button>
+        </div>
+       </div>
+      </div>
+     )}
+     {showGetSlipConfirm && (
+      <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex justify-center items-center z-50">
+       <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-6 relative">
+         <button
+          type="button"
+          onClick={() => setShowGetSlipConfirm(false)}
+          disabled={isRequestingSlip}
+          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+         >
+          <IoClose size={20} />
+        </button>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">
+         Get payment slip?
+        </h2>
+        <p className="text-sm text-gray-600 mb-4">
+         After you get the payment slip, this application can no longer be deleted. Do you want to proceed?
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+           type="button"
+           onClick={() => setShowGetSlipConfirm(false)}
+           disabled={isRequestingSlip}
+           className={`px-4 py-2 text-sm rounded-md border ${
+            isRequestingSlip
+             ? "border-gray-200 text-gray-400 cursor-not-allowed"
+             : "border-gray-300 text-gray-700 hover:bg-gray-50"
+           }`}
+          >
+           Cancel
+          </button>
+         <button
+           type="button"
+           onClick={async () => {
+            try {
+             setIsRequestingSlip(true);
+             const response = await fetch(
+              buildUrl(`/applicant/application/${application.application_id}/payment-slip`),
+              {
+              method: "POST",
+              headers: {
+               "Content-Type": "application/json",
+               Authorization: `Bearer ${localStorage.getItem("token")}`,
+              },
+             }
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+             toast.error(data.detail || data.message || "Failed to send payment slip.");
+             return;
+            }
+            // Re-fetch applications so status comes from backend
+            await getMyApplications();
+            setShowGetSlipConfirm(false);
+            toast.success(data.message || "Payment slip has been sent. Please check your email.");
+            } catch (e) {
+             console.error("Error requesting payment slip:", e);
+             toast.error("Failed to request payment slip. Please try again.");
+            } finally {
+             setIsRequestingSlip(false);
+            }
+           }}
+           disabled={isRequestingSlip}
+           className={`px-4 py-2 text-sm rounded-md text-white ${
+            isRequestingSlip
+             ? "bg-primary/60 cursor-not-allowed"
+             : "bg-primary hover:bg-primary/90"
+           }`}
+          >
+           {isRequestingSlip ? "Sending..." : "Confirm"}
+          </button>
+        </div>
+       </div>
+      </div>
      )}
     </div>
    </div>
@@ -311,9 +557,12 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
 
    <div className="grid grid-cols-1 gap-3 sm:gap-4">
     {filteredApplications.length > 0 ? (
-     filteredApplications.map((application, index) => (
-      <ApplicationCard key={index} application={application} />
-     ))
+      filteredApplications.map((application, index) => (
+       <ApplicationCard
+        key={application?.application_id ?? index}
+        application={application}
+       />
+      ))
     ) : (
      <div className="bg-gray-50 rounded-lg p-4 sm:p-6 text-center">
       <p className="text-sm sm:text-base text-gray-500">
@@ -326,15 +575,6 @@ export const ApplicationInfo = ({ refreshTrigger = 0, onSlipUploaded }) => {
  );
 };
 
-// Change the formatORNumber function to handle 7 digits without dash
-const formatORNumber = (value) => {
- // Remove all non-digit characters
- const numbers = value.replace(/\D/g, "");
-
- // Limit total length to 7 digits
- return numbers.slice(0, 7);
-};
-
 const UploadSlipModal = ({
  close,
  applicationId,
@@ -344,8 +584,10 @@ const UploadSlipModal = ({
  const [selectedFile, setSelectedFile] = useState(null);
  const [previewUrl, setPreviewUrl] = useState(null);
  const [isUploading, setIsUploading] = useState(false);
- const [orNumber, setOrNumber] = useState(""); // Add this line
- const fileInputRef = useRef(null);
+ const [isExtracting, setIsExtracting] = useState(false);
+ const [orNumber, setOrNumber] = useState("");
+ const [amount, setAmount] = useState("");
+  const fileInputRef = useRef(null);
 
  // Prevent background scrolling when modal is open
  useEffect(() => {
@@ -354,6 +596,45 @@ const UploadSlipModal = ({
    document.body.style.overflow = "auto";
   };
  }, []);
+
+ const extractSlipDetails = async (file) => {
+  try {
+   setIsExtracting(true);
+   const formData = new FormData();
+   formData.append("slip_image", file);
+
+   const response = await fetch(buildUrl("/applicant/application/extract-slip"), {
+    method: "POST",
+    headers: {
+     Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+    body: formData,
+   });
+
+   const data = await response.json().catch(() => ({}));
+   if (!response.ok) {
+    throw new Error(data.detail || "Failed to extract receipt details");
+   }
+
+   if (data?.official_receipt) {
+    setOrNumber(String(data.official_receipt));
+   }
+   if (data?.amount != null && data?.amount !== "") {
+    setAmount(String(data.amount));
+   }
+
+   if (data?.official_receipt || data?.amount != null) {
+    toast.success("Receipt details extracted. Please review before uploading.");
+   } else {
+    toast.info("Could not auto-extract receipt details. Please enter OR number and amount manually.");
+   }
+  } catch (error) {
+   console.error("Slip OCR extraction error:", error);
+   toast.info("Could not auto-extract receipt details. Please enter OR number and amount manually.");
+  } finally {
+   setIsExtracting(false);
+  }
+ };
 
  const handleFileSelect = (e) => {
   const file = e.target.files[0];
@@ -364,12 +645,15 @@ const UploadSlipModal = ({
     setPreviewUrl(reader.result);
    };
    reader.readAsDataURL(file);
+   extractSlipDetails(file);
   }
  };
 
  const handleRemoveFile = () => {
   setSelectedFile(null);
   setPreviewUrl(null);
+  setOrNumber("");
+  setAmount("");
   if (fileInputRef.current) {
    fileInputRef.current.value = "";
   }
@@ -385,6 +669,7 @@ const UploadSlipModal = ({
     setPreviewUrl(reader.result);
    };
    reader.readAsDataURL(file);
+   extractSlipDetails(file);
   }
  };
 
@@ -400,10 +685,14 @@ const UploadSlipModal = ({
    return;
   }
 
-  // Update regex to require exactly 7 digits
-  const orNumberRegex = /^\d{7}$/;
-  if (!orNumber || !orNumberRegex.test(orNumber)) {
-   toast.error("OR Number must be exactly 7 digits");
+  if (!String(orNumber || "").trim()) {
+   toast.error("Please enter the official receipt number");
+   return;
+  }
+
+  const parsedAmount = Number(amount);
+  if (!amount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+   toast.error("Please enter a valid receipt amount");
    return;
   }
 
@@ -417,7 +706,8 @@ const UploadSlipModal = ({
    const formData = new FormData();
    formData.append("application_ids", applicationId);
    formData.append("slip_image", selectedFile);
-   formData.append("official_receipt", orNumber);
+   formData.append("official_receipt", String(orNumber).trim());
+   formData.append("amount", String(parsedAmount));
    const response = await fetch(
     buildUrl("/applicant/applications/submit-pending"),
     {
@@ -432,7 +722,7 @@ const UploadSlipModal = ({
    const data = await response.json();
 
    if (!response.ok) {
-    throw new Error(data.message || "Failed to upload slip");
+    throw new Error(data.detail || data.message || "Failed to upload slip");
    }
 
    toast.success(`Slip uploaded successfully for ${applicationRole}`);
@@ -452,13 +742,7 @@ const UploadSlipModal = ({
   }
  };
 
- // Inside UploadSlipModal component, modify the input handler:
- const handleORNumberChange = (e) => {
-  const formatted = formatORNumber(e.target.value);
-  setOrNumber(formatted);
- };
-
- return (
+  return (
   <>
    <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex justify-center items-center z-50">
     <div className="bg-white w-[580px] rounded-2xl shadow-xl transform transition-all relative p-8">
@@ -539,34 +823,47 @@ const UploadSlipModal = ({
            className="w-full h-full object-contain"
           />
          </div>
-         <p className="mt-2 text-sm text-gray-500 text-center">
-          {selectedFile.name}
-         </p>
-        </div>
-       )}
-      </div>
+          <p className="mt-2 text-sm text-gray-500 text-center">
+           {selectedFile.name}
+          </p>
+          {isExtracting && (
+           <p className="mt-1 text-xs text-blue-600 text-center">
+            Extracting OR number and amount...
+           </p>
+          )}
+         </div>
+        )}
+       </div>
 
       <div className="flex flex-col gap-2 mt-5">
        <label htmlFor="or_number" className="text-gray-400">
         Official Receipt Number:
        </label>
-       <input
-        id="or_number"
-        type="text"
-        className={`px-4 h-10 rounded-md border ${
-         orNumber && !/^\d{7}$/.test(orNumber)
-          ? "border-red-500"
-          : "border-gray-300"
-        } text-primary`}
-        value={orNumber}
-        onChange={handleORNumberChange}
-        placeholder="ex. 34XXXXX"
-        maxLength={7} // 7 digits only
-       />
-       {orNumber && !/^\d{7}$/.test(orNumber) && (
-        <p className="text-xs text-red-500 mt-1">Must be exactly 7 digits</p>
-       )}
-      </div>
+        <input
+         id="or_number"
+         type="text"
+         className="px-4 h-10 rounded-md border border-gray-300 text-primary"
+         value={orNumber}
+         onChange={(e) => setOrNumber(e.target.value)}
+         placeholder="Enter OR number"
+        />
+       </div>
+
+       <div className="flex flex-col gap-2 mt-4">
+        <label htmlFor="receipt_amount" className="text-gray-400">
+         Amount:
+        </label>
+        <input
+         id="receipt_amount"
+         type="number"
+         step="0.01"
+         min="0"
+         className="px-4 h-10 rounded-md border border-gray-300 text-primary"
+         value={amount}
+         onChange={(e) => setAmount(e.target.value)}
+         placeholder="Enter amount from receipt"
+        />
+       </div>
 
       {/* Action Buttons */}
       <div className="mt-6 flex justify-end gap-3">
@@ -578,15 +875,15 @@ const UploadSlipModal = ({
        >
         Cancel
        </button>
-       <button
-        type="submit"
-        disabled={!selectedFile || !orNumber || isUploading}
-        className={`px-4 py-2 rounded-md text-white ${
-         selectedFile && orNumber && !isUploading
-          ? "bg-primary hover:bg-primary/90"
-          : "bg-gray-300 cursor-not-allowed"
-        } transition-colors`}
-       >
+        <button
+         type="submit"
+         disabled={!selectedFile || !String(orNumber).trim() || !amount || isUploading || isExtracting}
+         className={`px-4 py-2 rounded-md text-white ${
+          selectedFile && String(orNumber).trim() && amount && !isUploading && !isExtracting
+           ? "bg-primary hover:bg-primary/90"
+           : "bg-gray-300 cursor-not-allowed"
+         } transition-colors`}
+        >
         {isUploading ? (
          <div className="flex items-center gap-2">
           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

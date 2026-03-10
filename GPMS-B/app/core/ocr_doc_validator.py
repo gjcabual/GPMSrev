@@ -1,29 +1,11 @@
 """
-OCR Processor Script
+Document validation using pytesseract OCR (OR/CR/DL).
 
-This script processes images using OCR to extract text and visualize detection
-with bounding boxes. The results are saved as text files and annotated images.
-
-Requirements:
-- Python 3.6+
-- pytesseract
-- Pillow (PIL)
-- opencv-python
-
-Usage:
-    python ocr_processor.py <image_path>
+Requirements: Tesseract binary installed; pytesseract package.
 """
 
-import sys
-import os
-import argparse
-import cv2
-import numpy as np
-import re  
-
-from app.utils.image_ocr_utils import process_image
+import re
 from app.utils.document_ocr_utils import document_type, compare_credentials
-from app.utils.date_ocr_utils import extract_dates
 
 def validate_document(reference_image_path, uploaded_image_path, text_array, doc_type="DL", show_results=True, save_results=True):
     """
@@ -55,39 +37,3 @@ def validate_document(reference_image_path, uploaded_image_path, text_array, doc
         result['date_message'] = "Valid - CR documents do not expire"
     
     return result
-
-def main():
-    show_results = True  
-    save_results = True  
-    
-    # Document information to validate
-    text_array = [
-        "CHAVIT,",
-        "HARROLD",
-        "TIU",
-        "KO1-19-002724",
-        "Black",
-    ]
-
-    # # Get document paths
-    reference_image_path = document_type("DL")
-    uploaded_image_path = "DL_Data/dl_captured_normal.png"
-
-    # Validate document with save option
-    result = validate_document(
-        reference_image_path,
-        uploaded_image_path,
-        text_array,
-        show_results=show_results,
-        save_results=save_results
-    )
-
-    # Check validation statuses
-    print("\nValidation Status:")
-    print(f"Document: {'✓' if result['image_valid'] else '✗'}")
-    print(f"Information: {'✓' if result['text_valid'] else '✗'}")
-    print(f"Expiration: {'✓' if result['date_valid'] else '✗'}")
-    print("\n")
-
-if __name__ == "__main__":
-    main()

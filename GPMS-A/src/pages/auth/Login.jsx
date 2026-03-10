@@ -18,8 +18,12 @@ export const Login = () => {
  const [email, setEmail] = useState("");
  const [password, setPassword] = useState("");
  const [showPassword, setShowPassword] = useState(false);
+ const [isLoading, setIsLoading] = useState(false);
 
  const handleLogin = async () => {
+  if (isLoading) return;
+  setIsLoading(true);
+  let keepLoading = false;
   try {
    const formData = new FormData();
    formData.append("username", email);
@@ -30,6 +34,7 @@ export const Login = () => {
    });
    const data = await res.json();
    if (res.ok) {
+    keepLoading = true;
     localStorage.setItem("token", data.access_token);
     localStorage.setItem("full_name", data.full_name);
     localStorage.setItem("token_type", data.token_type);
@@ -42,11 +47,15 @@ export const Login = () => {
    }
   } catch (error) {
    toast.error("An error occurred");
+  } finally {
+   if (!keepLoading) {
+    setIsLoading(false);
+   }
   }
  };
 
  const handleKeyPress = (e) => {
-  if (e.key === "Enter") {
+  if (e.key === "Enter" && !isLoading) {
    handleLogin();
   }
  };
@@ -54,7 +63,14 @@ export const Login = () => {
  return (
   <>
    <div className="min-h-screen w-full flex flex-col justify-center items-center bg-gray-100 p-4 gap-4">
-    <img src="/main_logo.png" alt="" className="w-48 md:w-[300px] z-50 flex-shrink-0" />
+    <button
+     type="button"
+     onClick={() => nav("/")}
+     className="z-50 flex-shrink-0 cursor-pointer"
+     aria-label="Go to landing page"
+    >
+     <img src="/main_logo.png" alt="GatePass logo" className="w-48 md:w-[300px]" />
+    </button>
     <img
      src="/auth/bg_login.png"
      alt=""
@@ -94,6 +110,7 @@ export const Login = () => {
         onChange={(e) => setEmail(e.target.value)}
         onKeyDown={handleKeyPress}
         className="border border-gray-500 px-4 h-10 rounded-md outline-none"
+        placeholder="Enter your email address"
        />
       </div>
       <div className="flex flex-col">
@@ -136,17 +153,36 @@ export const Login = () => {
         onClick={() => nav("/forgot-password")}
         className="text-xs md:text-sm text-gray-500 font-medium cursor-pointer"
        >
-        forgot password?
+        Forgot password?
        </p>
       </div>
      </div>
      <div className="mt-8 md:mt-10 text-center flex flex-col gap-2">
       <button
        onClick={() => handleLogin()}
-       className="w-full text-base md:text-lg text-white bg-primary h-10 rounded-md cursor-pointer hover:opacity-90 transition-opacity"
+       disabled={isLoading}
+       className={`w-full text-base md:text-lg text-white bg-primary h-10 rounded-md transition-opacity flex items-center justify-center gap-2 ${
+        isLoading
+         ? "opacity-80 cursor-not-allowed"
+         : "cursor-pointer hover:opacity-90"
+       }`}
       >
-       Login
+       {isLoading && (
+        <span className="inline-block h-4 w-4 rounded-full border-2 border-white/70 border-t-white animate-spin" />
+       )}
+       {isLoading ? "Logging in..." : "Login"}
       </button>
+      {(role === "admin" || role === "staff") && (
+       <p className="text-sm font-medium font-light text-gray-500">
+        Don't have an account yet?{" "}
+        <span
+         onClick={() => nav("/applicant-signup")}
+         className="italic text-primary font-medium cursor-pointer hover:underline"
+        >
+         Sign up here
+        </span>
+       </p>
+      )}
      </div>
     </div>
    </div>

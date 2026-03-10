@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware  # Add this import
+from fastapi.middleware.cors import CORSMiddleware 
+from sqlalchemy import text
 from app.db.session import engine
 from app.db.models.user import Base as UserBase
 from app.db.models.profile import Base as ProfileBase
@@ -13,6 +14,7 @@ from app.db.models.document import Base as DocumentBase
 from app.db.models.sticker import Base as StickerBase
 from app.db.models.batch_sticker_sessions import Base as BatchStickerSessionsBase
 from app.db.models.assigned_driver import Base as AssignedDriverBase
+from app.db.models.email_change import Base as EmailChangeBase
 
 from app.core.security import get_current_user, get_current_applicant, get_current_staff, get_current_admin
 from app.schemas.user import UserInDB
@@ -28,6 +30,7 @@ from app.api.v1.management_route.reports import routes as reports_routes
 from app.api.v1.staff_route.route import router as staff_application_router  
 from app.api.v1.applicant_route import routes as applicant_application_routes 
 from app.api.v1.management_route.appliant_logs.route import router as applicant_logs_router  
+from app.routes.ocr import router as ocr_router
 
 app = FastAPI(title="GPMS-Backend System", version="1.0.0")
 
@@ -54,6 +57,48 @@ async def init_db():
         await conn.run_sync(StickerBase.metadata.create_all)
         await conn.run_sync(BatchStickerSessionsBase.metadata.create_all)
         await conn.run_sync(AssignedDriverBase.metadata.create_all)
+        await conn.run_sync(EmailChangeBase.metadata.create_all)
+
+        # Backward-compatible schema patch for existing databases.
+        # Ensures new batch-name feature does not break batch/report endpoints.
+        await conn.execute(
+            text(
+                "ALTER TABLE batch_sticker_sessions_tbl "
+                "ADD COLUMN IF NOT EXISTS batch_name VARCHAR(100)"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE batch_sticker_sessions_tbl "
+                "SET batch_name = COALESCE(NULLIF(TRIM(batch_name), ''), 'Legacy Batch')"
+            )
+        )
+
+        # Login lockout columns for existing databases.
+        await conn.execute(
+            text(
+                "ALTER TABLE users_tbl "
+                "ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE users_tbl "
+                "ADD COLUMN IF NOT EXISTS lock_until TIMESTAMP"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE application_status_tbl "
+                "ADD COLUMN IF NOT EXISTS remarks VARCHAR(500)"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE documents_tbl "
+                "ALTER COLUMN expired_at DROP NOT NULL"
+            )
+        )
 
 @app.on_event("startup")
 async def startup_event():
@@ -101,6 +146,8 @@ app.include_router(
     prefix="/api/v1", 
     tags=["applicant"]
 )
+
+app.include_router(ocr_router, prefix="/api/v1/ocr", tags=["ocr"])
 
 # For development purposes only - remove in production
 # Vehicle routes

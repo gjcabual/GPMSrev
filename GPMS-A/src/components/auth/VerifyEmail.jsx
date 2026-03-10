@@ -122,12 +122,13 @@ export const VerifyEmail = ({ email, onClose, onVerificationComplete }) => {
      <div className="flex flex-col items-start gap-2">
       <MdMarkEmailRead size={60} className="text-primary" />
      </div>
-     <button
+     <p
+      type="button"
       onClick={onClose}
       className="text-primary font-medium cursor-pointer hover:text-primary/80"
      >
       back
-     </button>
+     </p>
     </div>
     <h1 className="text-xl text-primary font-medium">Verify Email</h1>
     <p className="text-md font-light text-gray-500">
@@ -159,13 +160,14 @@ export const VerifyEmail = ({ email, onClose, onVerificationComplete }) => {
       >
        {isSubmitting ? "Verifying..." : "Submit"}
       </button>
-      <button
+      <p
+       type="button"
        onClick={handleResendOTP}
        disabled={isResending}
        className="text-primary hover:text-primary/80 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
        {isResending ? "Resending..." : "Resend OTP"}
-      </button>
+      </p>
      </div>
     </div>
    </div>

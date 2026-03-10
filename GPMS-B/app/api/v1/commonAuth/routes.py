@@ -38,12 +38,6 @@ async def verify_and_reset_password(
     db: AsyncSession = Depends(get_db)
 ):
     """Verify OTP and reset password"""
-    if len(new_password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
-        )
-    
     return await CommonAuthView.reset_password(db, email, otp, new_password)
 
 @router.post("/reset-password")
@@ -83,11 +77,6 @@ async def set_new_password(
     db: AsyncSession = Depends(get_db)
 ):
     """Step 3: Set new password after OTP verification"""
-    if len(new_password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
-        )
     return await CommonAuthView.verify_otp_and_reset_password(db, email, otp, new_password)
 
 
@@ -207,3 +196,32 @@ async def get_profile_image_by_id(
             "Cache-Control": "max-age=3600"
         }
     )
+
+
+@router.post("/profile/email/change/request", response_model=dict)
+async def request_email_change(
+    new_email: str = Form(...),
+    current_password: str = Form(...),
+    current_user: UserInDB = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CommonAuthView.request_email_change(
+        db, current_user.user_id, new_email, current_password
+    )
+
+
+@router.post("/profile/email/change/resend", response_model=dict)
+async def resend_email_change_otp(
+    current_user: UserInDB = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CommonAuthView.resend_email_change_otp(db, current_user.user_id)
+
+
+@router.post("/profile/email/change/verify", response_model=dict)
+async def verify_email_change(
+    otp_code: str = Form(...),
+    current_user: UserInDB = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CommonAuthView.verify_email_change(db, current_user.user_id, otp_code)

@@ -23,7 +23,9 @@ CREATE TABLE users_tbl (
     verified_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    role INTEGER NOT NULL DEFAULT 0
+    role INTEGER NOT NULL DEFAULT 0,
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    lock_until TIMESTAMP
 );
 CREATE INDEX idx_users_email ON users_tbl(email);
 
@@ -31,6 +33,7 @@ CREATE INDEX idx_users_email ON users_tbl(email);
 CREATE TABLE batch_sticker_sessions_tbl (
     batch_id SERIAL PRIMARY KEY,
     type VARCHAR(100) NOT NULL,
+    batch_name VARCHAR(100),
     start_at INTEGER NOT NULL,
     end_at INTEGER NOT NULL,
     price INTEGER NOT NULL,
@@ -154,12 +157,12 @@ CREATE TABLE tokens_tbl (
 -- ============================================
 
 -- Batch sticker sessions
-INSERT INTO batch_sticker_sessions_tbl (type, start_at, end_at, price, created_at) VALUES
-('Student', 1001, 1999, 50, NOW()),
-('Employee Parking', 1001, 1999, 50, NOW()),
-('Drop Off', 1001, 1999, 50, NOW()),
-('Graduate/Undergrad Student', 1001, 1999, 50, NOW()),
-('Concessionaire', 1001, 1999, 100, NOW());
+INSERT INTO batch_sticker_sessions_tbl (type, batch_name, start_at, end_at, price, created_at) VALUES
+('Student', 'Default Batch', 1001, 1999, 50, NOW()),
+('Employee Parking', 'Default Batch', 1001, 1999, 50, NOW()),
+('Drop Off', 'Default Batch', 1001, 1999, 50, NOW()),
+('Graduate/Undergrad Student', 'Default Batch', 1001, 1999, 50, NOW()),
+('Concessionaire', 'Default Batch', 1001, 1999, 100, NOW());
 
 -- Users (role: 0=admin, 1=staff, 2=applicant)
 -- Passwords: admin123, staff123, applicant123

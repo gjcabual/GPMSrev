@@ -14,11 +14,13 @@ class StatusEnum(str, Enum):
 class ApplicationStatusUpdate(BaseModel):
     status: StatusEnum
     application_id: int
+    remarks: Optional[str] = None
 
 # Response model for application status
 class ApplicationStatusResponse(BaseModel):
     status_id: int
     status: str
+    remarks: Optional[str] = None
     date: date
     application_id: int
     processed_by: UUID | None
@@ -34,11 +36,13 @@ class StatusUpdateResponse(BaseModel):
 # Form model for request handling
 async def form_body(
     status: StatusEnum = Form(...),
-    application_id: int = Form(...)
+    application_id: int = Form(...),
+    remarks: Optional[str] = Form(None),
 ) -> ApplicationStatusUpdate:
     return ApplicationStatusUpdate(
         status=status,
-        application_id=application_id
+        application_id=application_id,
+        remarks=remarks,
     )
 
 class OwnerDetail(BaseModel):
@@ -118,10 +122,13 @@ class PendingApplicationItem(BaseModel):
     application_role: str
     vehicle_type: str
     assigned_drivers: list
+    slip_id: Optional[int] = None
     slip_image: Optional[str] = None
     slip_amount: Optional[float] = None
+    slip_official_receipt: Optional[str] = None
     slip_date: Optional[str] = None  # Change from datetime to str
     nature_of_payment: Optional[str] = None
+    has_uploaded_receipt: bool = False
     documents: list
 
 class PendingApplicationsListResponse(BaseModel):
@@ -135,7 +142,7 @@ class DocumentCreate(BaseModel):
     type: str  # Will now accept "Official Receipt", "Certificate of Registration", "Driver's License"
     image: bytes
     registered_date: date
-    expired_at: date
+    expired_at: Optional[date] = None
 
     @validator('type')
     def validate_document_type(cls, v):
@@ -207,6 +214,8 @@ class ApplicationListResponse(BaseModel):
     brand: str
     application_role: str
     vehicle_type: str
+    status: str
+    has_uploaded_receipt: bool = False
     front_image: Optional[str] = None
     back_image: Optional[str] = None
 
@@ -228,14 +237,14 @@ class VehicleResponse(BaseModel):
 class DriverDocumentResponse(BaseModel):
     type: str
     registered_date: date
-    expired_at: date
+    expired_at: Optional[date] = None
     image: Optional[str] = None
 
 
 class DocumentResponse(BaseModel):
     type: str
     registered_date: date
-    expired_at: date
+    expired_at: Optional[date] = None
     image: Optional[str] = None
 
     class Config:

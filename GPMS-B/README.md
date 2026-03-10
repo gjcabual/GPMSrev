@@ -1,87 +1,70 @@
-# FastAPI Gate Pass Management System
+# GPMS-B - Backend (FastAPI)
 
-This project is a Vehicle Pass Authorization Management System designed to streamline campus access control. It manages and organizes vehicle registration data and access applications within the campus infrastructure. The system leverages Optical Character Recognition (OCR) technology to automatically validate and match information from applicant submissions, ensuring efficient and accurate processing of vehicle pass requests.
+Backend module for CSU GPMS. Handles authentication, applications, document processing/OCR, approval workflow, and management reports.
 
-## Project Setup
+## Tech Stack
 
-### Prerequisites
+- FastAPI
+- SQLAlchemy (async)
+- asyncpg
+- PostgreSQL
+- JWT auth
+- pytesseract OCR utilities
 
-- **Python 3.8+**: Make sure you have Python installed. You can download it from [python.org](https://www.python.org/downloads/).
-- **Virtual Environment**: It’s recommended to create a virtual environment for this project.
-- **Database**: This project requires a database setup (e.g., PostgreSQL, MySQL, etc.). Make sure to have it installed and configured.
+## Prerequisites
 
-### 1. Clone the Repository
+- Python 3.10+
+- PostgreSQL 12+
+- Tesseract OCR binary installed and accessible
 
-Start by cloning this repository and navigating to the project directory:
-
-```bash
-git clone <repository_url>
-cd project_directory
-```
-
-### 2. Create and Activate a Virtual Environment
-
-Create a virtual environment to manage dependencies:
+## Local Setup
 
 ```bash
+cd GPMS-B
 python -m venv .venv
-```
-
-Activate the virtual environment:
-Windows:
-
-```Bash
 .venv\Scripts\activate
-```
-
-### 3. Install Dependencies
-
-Install the project dependencies by running:
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure Database
+## Environment
 
-1. Create a new PostgreSQL database named `dbgpms`:
+Copy `.env.example` to `.env` and configure:
 
-```sql
-CREATE DATABASE dbgpms;
-```
+- Database: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- Optional email: `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`
+- Optional OCR config: `TESSERACT_CONFIG`
 
-2. Set your DATABASE_URL in the format:
-
-```bash
-postgresql+asyncpg://username:password@localhost/dbgpms
-```
-
-3. Run the server to create tables:
+## Run API
 
 ```bash
-uvicorn main:app --reload
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-4. Seed the database with initial data:
+- API root: `http://127.0.0.1:8000`
+- OpenAPI docs: `http://127.0.0.1:8000/docs`
+
+## Optional Seed Data
 
 ```bash
 python -m app.utils.seed_db --action seed
 ```
 
-> **Note**: Make sure your database server is running before executing these commands.
+## Main Source Structure
 
-### 5. Run the Application
-
-Start the FastAPI application using Uvicorn:
-
-```bash
-uvicorn main:app --reload
+```text
+app/
+|-- api/v1/
+|-- core/
+|-- db/
+|-- schemas/
+|-- services/
+|-- utils/
+`-- routes/
 ```
 
-### Deactivating the Virtual Environment
+## OCR Notes
 
-Once done, you can deactivate the virtual environment with:
+- OCR extraction is implemented in `app/utils/document_ocr_utils.py` and related helpers.
+- Input document types include OR, CR, and DL.
 
-```bash
-deactivate
-```
+Last updated: 2026-03-10

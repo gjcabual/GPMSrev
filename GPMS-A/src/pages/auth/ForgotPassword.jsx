@@ -4,6 +4,9 @@ import { buildUrl } from "../../utils/buildUrl";
 import { useState } from "react";
 import { toast } from "sonner";
 
+const EMAIL_REGEX =
+ /^[A-Za-z0-9]+(?:[._%+-][A-Za-z0-9]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+
 export const ForgotPassword = () => {
  const nav = useNavigate();
 
@@ -13,13 +16,14 @@ export const ForgotPassword = () => {
 
  const formData = new FormData();
  const handleForgotPassword = async () => {
-  if (!email || !email.includes("@")) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!EMAIL_REGEX.test(normalizedEmail)) {
    toast.error("Please enter a valid email address");
    return;
   }
 
   setIsLoading(true);
-  formData.append("email", email);
+  formData.append("email", normalizedEmail);
 
   try {
    const res = await fetch(buildUrl("/forgot-password/request-otp"), {

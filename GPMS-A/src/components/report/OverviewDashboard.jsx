@@ -17,11 +17,11 @@ export const OverviewDashboard = ({ data }) => {
   }
  }, [data]);
 
- return (
+  return (
   <div className="w-full mt-5 flex flex-nowrap justify-between gap-3">
    <PieChart data={totalApplication} />
    <DonutChart data={registered} />
-   <DonutChartv2 data={charges} />
+   <DonutChartv2 data={charges} applicationStatus={totalApplication} />
   </div>
  );
 };

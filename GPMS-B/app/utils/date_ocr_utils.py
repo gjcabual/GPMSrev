@@ -97,6 +97,23 @@ def extract_dates(text, doc_type="DL"):
                                 return found_dates
                         except ValueError:
                             continue
+
+    # DL-specific pass: many cards place "Date of Birth" and the date
+    # on the same line, so don't rely only on previous-line keyword checks.
+    if doc_type == 'DL' and not found_dates['birth_date']:
+        dl_date_pat = r'(\d{4}[/-]\d{2}[/-]\d{2}|\d{2}[/-]\d{2}[/-]\d{4})'
+        for i, raw_line in enumerate(text.split('\n')):
+            line = raw_line.strip()
+            ll = line.lower()
+            if 'date of birth' in ll or 'dob' in ll or 'birth' in ll:
+                # Prefer a date on the same line.
+                m = re.search(dl_date_pat, line)
+                if not m and i + 1 < len(text.split('\n')):
+                    # Fallback: next line may contain only the date.
+                    m = re.search(dl_date_pat, text.split('\n')[i + 1].strip())
+                if m:
+                    found_dates['birth_date'] = m.group(1).replace('-', '/')
+                    break
     
     # Process patterns and keywords for all document types
     patterns = date_patterns.get(doc_type, date_patterns['DL'])
